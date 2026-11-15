@@ -101,6 +101,7 @@
   .roi span { position: absolute; top: -26px; left: -3px; font-size: 14px; font-weight: 800;
     padding: 2px 6px; color: #000; white-space: nowrap; }
   .roi.tube { border-color: #00e5ff; } .roi.tube span { background: #00e5ff; }
+  .roi.clear { border-color: #b6ff00; } .roi.clear span { background: #b6ff00; }
   .roi.white { border-color: #ff00e5; aspect-ratio: 1 / 1; } .roi.white span { background: #ff00e5; }
   .cam-msg { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 12px;
     align-items: center; justify-content: center; text-align: center; padding: 20px; background: rgba(0,0,0,.85); }
@@ -180,10 +181,10 @@
     <span>Add insulin to the tube and shake</span></li>
   <li><span class="num">2</span>
     <svg viewBox="0 0 52 52" aria-hidden="true">
-      <rect x="3" y="8" width="46" height="36" rx="3" fill="#000" stroke="#fff" stroke-width="2.5"/>
-      <rect x="10" y="14" width="10" height="24" fill="none" stroke="#00e5ff" stroke-width="2.5" stroke-dasharray="4 3"/>
-      <rect x="31" y="21" width="10" height="10" fill="#fff"/>
-      <path d="M15 4v10" stroke="#ffd400" stroke-width="3" stroke-linecap="round"/><path d="M11 10l4 4 4-4" fill="none" stroke="#ffd400" stroke-width="3" stroke-linecap="round"/>
+      <rect x="2" y="6" width="48" height="40" rx="3" fill="#000" stroke="#fff" stroke-width="2"/>
+      <g fill="#fff"><rect x="6" y="11" width="26" height="1.3"/><rect x="6" y="15" width="26" height="1.3"/><rect x="6" y="19" width="26" height="1.3"/><rect x="6" y="23" width="26" height="1.3"/><rect x="6" y="27" width="26" height="1.3"/><rect x="6" y="31" width="26" height="1.3"/><rect x="6" y="35" width="26" height="1.3"/><rect x="6" y="39" width="26" height="1.3"/></g>
+      <rect x="8" y="9" width="10" height="34" rx="5" fill="rgba(255,212,0,.45)" stroke="#00e5ff" stroke-width="2"/>
+      <rect x="37" y="21" width="9" height="9" fill="#fff"/>
     </svg>
     <span>Place tube on the card</span></li>
   <li><span class="num">3</span>
@@ -235,9 +236,12 @@
       <div class="muted" id="resultTime">No scan yet</div>
       <div class="result-level lvl-nc" id="resultLevel">—</div>
       <div class="kv">
-        <span>Ratio (tube ÷ white)</span><b id="resultRatio">—</b>
-        <span>Tube value</span><b id="resultTube">—</b>
-        <span>White value</span><b id="resultWhite">—</b>
+        <span>Damage score</span><b id="resultDamage">—</b>
+        <span>① Contrast loss</span><b id="resultContrast">—</b>
+        <span>② Haze</span><b id="resultHaze">—</b>
+        <span>③ Color (green shift)</span><b id="resultColor">—</b>
+        <span class="muted">Stripe contrast tube / clear</span><span class="muted" id="resultStripe">—</span>
+        <span class="muted">Mean tube / clear / white</span><span class="muted" id="resultRaw">—</span>
       </div>
       <div class="warn-box" id="resultWarn" hidden></div>
       <div class="muted" id="calNote" style="margin-top:10px"></div>
@@ -277,15 +281,16 @@
     <div class="card">
       <h3>Statistics &amp; cutoffs</h3>
       <div class="kv" id="calStats">
-        <span>Fresh mean</span><b id="stFreshMean">—</b>
+        <span>Fresh damage score, mean</span><b id="stFreshMean">—</b>
         <span>Fresh SD</span><b id="stFreshSD">—</b>
-        <span>Damaged mean</span><b id="stDmgMean">—</b>
+        <span>Damaged damage score, mean</span><b id="stDmgMean">—</b>
         <span>Damaged SD</span><b id="stDmgSD">—</b>
-        <span>🟢 None if ratio &lt;</span><b id="stNone">—</b>
+        <span>🟢 None if score &lt;</span><b id="stNone">—</b>
         <span>🟡 Mild if &lt;</span><b id="stMild">—</b>
         <span>🟠 Moderate if &lt;</span><b id="stMod">—</b>
         <span>🔴 Severe if ≥</span><b id="stSev">—</b>
       </div>
+      <div id="scoreStats" style="margin-top:12px"></div>
       <div class="warn-box" id="overlapWarn" hidden>Fresh and damaged overlap — check LED, filter, or dye amount.</div>
       <div class="row" style="margin-top:14px">
         <button class="btn-primary" id="btnSaveCal" disabled>Save calibration</button>
@@ -295,7 +300,7 @@
 
     <div class="card">
       <h3>Public calibration (built into the app)</h3>
-      <p class="muted" style="margin-top:0" id="builtInInfo"></p>
+      <div class="muted" id="builtInInfo"></div>
       <p class="muted">To update it: save a calibration above, tap the button, then replace the
         <code>BUILT_IN_CALIBRATION</code> block in CONFIG (index.html) with the copied text and publish.</p>
       <div class="row"><button class="btn-primary" id="btnCopyCode">Copy calibration as code</button></div>
@@ -326,7 +331,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Time</th><th>Type</th><th>Sample</th><th>Ratio</th><th>Level</th></tr></thead>
+          <thead><tr><th>Time</th><th>Type</th><th>Sample</th><th>Damage</th><th>Level</th></tr></thead>
           <tbody id="logBody"></tbody>
         </table>
       </div>
@@ -364,13 +369,29 @@ const CONFIG = {
   //   x, y = top-left corner;  w = width;  h = height.
   //   square: true -> height is made equal to width in pixels (h is ignored).
   boxes: {
-    tube:  { label: "TUBE",  x: 30, y: 25, w: 18, h: 50 },
-    white: { label: "WHITE", x: 65, y: 42, w: 12, h: 12, square: true },
+    tube:  { label: "TUBE",          x: 22, y: 25, w: 16, h: 50 },
+    clear: { label: "STRIPES-CLEAR", x: 44, y: 25, w: 14, h: 50 },   // uncovered stripes beside the tube
+    white: { label: "WHITE",         x: 70, y: 44, w: 12, h: 12, square: true },
   },
 
-  // Which colour value to measure: "green" (default, matches ~500 nm emission),
-  // "luminance", "red", or "blue".
+  // Colour value used for the contrast and haze scores: "green" (default, matches ~500 nm emission),
+  // "luminance", "red", or "blue". (The color score always uses all three channels.)
   channel: "green",
+
+  // 3-score method. Each scan gives:
+  //   contrast = 1 − (stripe contrast in TUBE ÷ stripe contrast in STRIPES-CLEAR)   [0 = sharp, 1 = stripes gone]
+  //   haze     = (dark gaps in TUBE − dark gaps in CLEAR) ÷ (WHITE − dark gaps in CLEAR)
+  //   color    = green share G/(R+G+B) in TUBE − green share in CLEAR
+  // Stripe contrast = (high − low) ÷ (high + low), using the percentiles below.
+  // Damage % = weighted average of each score rescaled so fresh mean = 0 % and damaged mean = 100 %.
+  analysis: {
+    lowPercentile: 10,       // "dark gaps" level inside a box
+    highPercentile: 90,      // "white stripes" level inside a box
+    weights: { contrast: 1, haze: 1, color: 1 },   // set one to 0 to leave it out
+    minSeparationSD: 2,      // a score is ignored if fresh and damaged means are closer than this many SDs
+    clampMin: -0.5,          // limits on each rescaled score before averaging (stops one score dominating)
+    clampMax: 1.5,
+  },
 
   // Scan: number of frames averaged and delay between them (ms).
   scan: { frames: 5, intervalMs: 100 },
@@ -380,6 +401,7 @@ const CONFIG = {
     saturationValue: 255,        // a pixel at this value is "overexposed"
     maxSaturatedFraction: 0.05,  // warn if more than 5% of a box's pixels are overexposed
     minWhiteValue: 20,           // warn if white patch average is below this (too dark)
+    minClearContrast: 0.15,      // warn if stripes in STRIPES-CLEAR are this faint (out of focus / misplaced)
   },
 
   // Calibration rules.
@@ -410,12 +432,15 @@ const CONFIG = {
   // While isPlaceholder is true, public mode shows "Demo calibration — not for real use".
   // ------------------------------------------------------------------
   BUILT_IN_CALIBRATION: {
-    isPlaceholder: true,       // PLACEHOLDER — set by "Copy calibration as code" to false
+    isPlaceholder: true,       // PLACEHOLDER — "Copy calibration as code" outputs false
     channel: "green",
-    freshMean: 0.25000,        // PLACEHOLDER
-    freshSD: 0.02000,          // PLACEHOLDER
-    damagedMean: 0.60000,      // PLACEHOLDER
-    damagedSD: 0.05000,        // PLACEHOLDER
+    weights: { contrast: 1, haze: 1, color: 1 },
+    scores: {                  // PLACEHOLDER numbers — not measured
+      contrast: { freshMean: 0.05000, freshSD: 0.03000, damagedMean: 0.55000, damagedSD: 0.08000 },
+      haze:     { freshMean: 0.01000, freshSD: 0.01000, damagedMean: 0.20000, damagedSD: 0.04000 },
+      color:    { freshMean: 0.00000, freshSD: 0.00400, damagedMean: 0.05000, damagedSD: 0.01000 },
+    },
+    combined: { freshMean: 0.00000, freshSD: 6.00000, damagedMean: 100.00000, damagedSD: 12.00000 },  // damage %, PLACEHOLDER
     nFresh: 0,
     nDamaged: 0,
     measuredOn: "PLACEHOLDER",
@@ -442,18 +467,22 @@ const CONFIG = {
     viewWidthMm: 72,
     viewHeightMm: 128,
     marginMm: 14,            // black border around the camera view
-    stripeMm: 3,             // width of the white alignment stripes (just outside the camera view)
-    stripeGapMm: 1.5,        // gap between camera view edge and stripe
+    stripeWidthMm: 0.8,      // thin white measurement stripes under the tube and STRIPES-CLEAR
+    stripePitchMm: 3,        // distance from one stripe to the next
+    stripeDirection: "horizontal",  // "horizontal" = across the tube (tube box is tall), or "vertical"
+    stripesPadMm: 4,         // striped area extends this far around the TUBE and STRIPES-CLEAR boxes
+    edgeBarMm: 3,            // white edge bars just outside the camera view, for lining the card up
+    edgeBarGapMm: 1.5,       // gap between camera view edge and edge bar
     tubeOutlineGapMm: 1.5,   // tube outline is drawn this far OUTSIDE the TUBE box so it is not measured
     scaleBarMm: 50,          // scale bar length (5 cm)
   },
 
-  decimals: 3,               // ratio decimals shown
+  decimals: 3,               // score decimals shown
   rawDecimals: 1,            // decimals for raw tube/white values
 
   storageKeys: {
-    calibration: "insulinReader.calibration.v1",
-    draft: "insulinReader.calDraft.v1",
+    calibration: "insulinReader.calibration.v2",   // v2 = 3-score stripe method (old v1 ratio data is ignored)
+    draft: "insulinReader.calDraft.v2",
     log: "insulinReader.log.v1",
   },
 };
@@ -506,8 +535,8 @@ const state = {
   builtInCal: null,            // from CONFIG.BUILT_IN_CALIBRATION — used by public mode
   calibration: null,           // team's saved calibration object (team mode only)
   calInMemoryOnly: false,
-  draft: { fresh: [], damaged: [] }, // each entry: {id, ratio, tube, white, time, warnings}
-  log: [],                     // {id, time, type, name, ratio, level, tube, white, channel, warnings}
+  draft: { fresh: [], damaged: [] }, // each entry: {id, scores:{contrast,haze,color}, tube, clear, white, time, warnings}
+  log: [],                     // {id, time, type, name, damage, contrast, haze, color, level, tube, clear, white, channel, warnings}
 };
 
 /* =====================================================================
@@ -518,7 +547,7 @@ const video = $("video");
 function drawOverlays() {
   const host = $("overlays");
   host.innerHTML = "";
-  for (const key of ["tube", "white"]) {
+  for (const key of ["tube", "clear", "white"]) {
     const b = CONFIG.boxes[key];
     const el = document.createElement("div");
     el.className = "roi " + key;
@@ -713,6 +742,7 @@ function channelFns(channel) {
   }
 }
 
+// Capture N frames, average them pixel-by-pixel inside each box, then compute the 3 scores.
 async function captureAndAnalyze() {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) throw new Error("Camera not ready");
@@ -720,44 +750,71 @@ async function captureAndAnalyze() {
   canvas.width = vw; canvas.height = vh;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const fns = channelFns(CONFIG.channel);
+  const A = CONFIG.analysis, F = CONFIG.scan.frames;
 
-  const boxes = {
-    tube: { rect: boxToPixels(CONFIG.boxes.tube, vw, vh), sum: 0, n: 0, sat: 0 },
-    white: { rect: boxToPixels(CONFIG.boxes.white, vw, vh), sum: 0, n: 0, sat: 0 },
-  };
+  const boxes = {};
+  ["tube", "clear", "white"].forEach((k) => {
+    const rect = boxToPixels(CONFIG.boxes[k], vw, vh);
+    boxes[k] = { rect, sum: new Float32Array(rect.w * rect.h * 3), n: 0, sat: 0 };
+  });
 
-  for (let f = 0; f < CONFIG.scan.frames; f++) {
+  for (let f = 0; f < F; f++) {
     ctx.drawImage(video, 0, 0, vw, vh);
     for (const key in boxes) {
-      const B = boxes[key], r = B.rect;
+      const B = boxes[key], r = B.rect, s = B.sum;
       const d = ctx.getImageData(r.x, r.y, r.w, r.h).data;
-      for (let i = 0; i < d.length; i += 4) {
+      for (let i = 0, j = 0; i < d.length; i += 4, j += 3) {
         const R = d[i], G = d[i + 1], Bl = d[i + 2];
-        B.sum += fns.value(R, G, Bl);
+        s[j] += R; s[j + 1] += G; s[j + 2] += Bl;
         if (fns.sat(R, G, Bl)) B.sat++;
         B.n++;
       }
     }
-    if (f < CONFIG.scan.frames - 1) await sleep(CONFIG.scan.intervalMs);
+    if (f < F - 1) await sleep(CONFIG.scan.intervalMs);
   }
 
-  // Averaging all pixels over all frames = averaging the frames first, then the box.
-  const tube = boxes.tube.sum / boxes.tube.n;
-  const white = boxes.white.sum / boxes.white.n;
-  const ratio = white > 0 ? tube / white : NaN;
+  // Per box: mean of the measurement channel, low/high percentiles (dark gaps / white stripes), green share.
+  const st = {};
+  for (const key in boxes) {
+    const s = boxes[key].sum, px = s.length / 3;
+    const vals = new Float32Array(px);
+    let R = 0, G = 0, Bl = 0, tot = 0;
+    for (let p = 0; p < px; p++) {
+      const r = s[3 * p] / F, g = s[3 * p + 1] / F, b = s[3 * p + 2] / F;
+      const v = fns.value(r, g, b);
+      vals[p] = v; tot += v; R += r; G += g; Bl += b;
+    }
+    vals.sort();
+    const pct = (q) => vals[Math.min(px - 1, Math.max(0, Math.floor(q / 100 * (px - 1))))];
+    st[key] = { mean: tot / px, lo: pct(A.lowPercentile), hi: pct(A.highPercentile),
+      green: (R + G + Bl) > 0 ? G / (R + G + Bl) : NaN, satFrac: boxes[key].sat / boxes[key].n };
+  }
+  const T = st.tube, C = st.clear, W = st.white;
+  const michelson = (x) => (x.hi - x.lo) / (x.hi + x.lo + 1e-6);
+  const contrastTube = michelson(T), contrastClear = michelson(C);
+
+  const scores = {
+    // 1. CONTRAST LOSS: 0 = stripes as sharp through the tube as uncovered; 1 = stripes gone.
+    contrast: contrastClear > 0 ? 1 - contrastTube / contrastClear : NaN,
+    // 2. HAZE: how much the dark gaps brighten inside the tube, as a fraction of (white − dark).
+    haze: (W.mean - C.lo) > 0 ? (T.lo - C.lo) / (W.mean - C.lo) : NaN,
+    // 3. COLOR: green share of light in the tube minus green share over clear stripes (curcumin ~500 nm glow).
+    color: T.green - C.green,
+  };
 
   const warnings = [];
-  const tubeSat = boxes.tube.sat / boxes.tube.n;
-  const whiteSat = boxes.white.sat / boxes.white.n;
-  if (tubeSat > CONFIG.qc.maxSaturatedFraction)
-    warnings.push(`TUBE overexposed (${(tubeSat * 100).toFixed(1)}% pixels at ${CONFIG.qc.saturationValue}) — reduce LED brightness or exposure.`);
-  if (whiteSat > CONFIG.qc.maxSaturatedFraction)
-    warnings.push(`WHITE overexposed (${(whiteSat * 100).toFixed(1)}% pixels at ${CONFIG.qc.saturationValue}) — ratio will be wrong. Dim the light or use a greyer patch.`);
-  if (white < CONFIG.qc.minWhiteValue)
-    warnings.push(`WHITE too dark (average ${white.toFixed(1)} < ${CONFIG.qc.minWhiteValue}) — check LED and box position.`);
-  if (!isFinite(ratio)) warnings.push("White value is zero — cannot compute ratio.");
+  const names = { tube: "TUBE", clear: "STRIPES-CLEAR", white: "WHITE" };
+  for (const key in st) {
+    if (st[key].satFrac > CONFIG.qc.maxSaturatedFraction)
+      warnings.push(`${names[key]} overexposed (${(st[key].satFrac * 100).toFixed(1)}% pixels at ${CONFIG.qc.saturationValue}) — dim the LED or lower exposure.`);
+  }
+  if (W.mean < CONFIG.qc.minWhiteValue)
+    warnings.push(`WHITE too dark (average ${W.mean.toFixed(1)} < ${CONFIG.qc.minWhiteValue}) — check LED and box position.`);
+  if (!(contrastClear >= CONFIG.qc.minClearContrast))
+    warnings.push(`Stripes not visible in STRIPES-CLEAR (contrast ${fmt(contrastClear)} < ${CONFIG.qc.minClearContrast}) — check focus, card position, and that the tube is not covering that box.`);
+  if (!["contrast", "haze", "color"].every((k) => isFinite(scores[k]))) warnings.push("Could not compute all three scores.");
 
-  return { tube, white, ratio, warnings, time: new Date() };
+  return { scores, tube: T.mean, clear: C.mean, white: W.mean, contrastTube, contrastClear, warnings, time: new Date() };
 }
 
 function setScanButtonsEnabled(on) {
@@ -812,12 +869,40 @@ function computeCutoffs(freshMean, freshSD, damagedMean) {
   };
 }
 
-function classify(ratio, cal) {
-  if (!cal || !isFinite(ratio)) return null;
-  if (ratio < cal.noneCutoff) return LEVELS.none;
-  if (ratio < cal.mildMax) return LEVELS.mild;
-  if (ratio < cal.moderateMax) return LEVELS.moderate;
+function classify(score, cal) {
+  if (!cal || !isFinite(score)) return null;
+  if (score < cal.noneCutoff) return LEVELS.none;
+  if (score < cal.mildMax) return LEVELS.mild;
+  if (score < cal.moderateMax) return LEVELS.moderate;
   return LEVELS.severe;
+}
+
+/* ---------- 3-score method: combine contrast, haze and color into one damage % ---------- */
+const SCORE_KEYS = ["contrast", "haze", "color"];
+const SCORE_NAMES = { contrast: "Contrast loss", haze: "Haze", color: "Color (green shift)" };
+const fmtPct = (v) => (isFinite(v) ? Number(v).toFixed(1) + " %" : "—");
+
+// A score is only used if fresh and damaged are clearly apart (else it just adds noise).
+function scoreUsable(s) {
+  if (!s) return false;
+  const sep = s.damagedMean - s.freshMean;
+  const noise = Math.max(isFinite(s.freshSD) ? s.freshSD : 0, isFinite(s.damagedSD) ? s.damagedSD : 0, 1e-9);
+  return isFinite(sep) && Math.abs(sep) >= CONFIG.analysis.minSeparationSD * noise;
+}
+
+// Each score is rescaled so fresh mean = 0 and damaged mean = 1, then weighted-averaged → %.
+function damagePercent(scores, cal) {
+  if (!scores || !cal || !cal.scores) return NaN;
+  const W = cal.weights || CONFIG.analysis.weights, A = CONFIG.analysis;
+  let sum = 0, wsum = 0;
+  for (const k of SCORE_KEYS) {
+    const w = W[k] || 0, s = cal.scores[k];
+    if (!w || !scoreUsable(s) || !isFinite(scores[k])) continue;
+    const n = (scores[k] - s.freshMean) / (s.damagedMean - s.freshMean);
+    sum += w * clamp(n, A.clampMin, A.clampMax);
+    wsum += w;
+  }
+  return wsum ? (100 * sum) / wsum : NaN;
 }
 
 function showResult(res, level) {
@@ -826,9 +911,12 @@ function showResult(res, level) {
   const el = $("resultLevel");
   if (level) { el.textContent = level.emoji + " " + level.name; el.className = "result-level " + level.cls; }
   else { el.textContent = "⚪ Not calibrated"; el.className = "result-level lvl-nc"; }
-  $("resultRatio").textContent = fmt(res.ratio);
-  $("resultTube").textContent = fmt(res.tube, CONFIG.rawDecimals);
-  $("resultWhite").textContent = fmt(res.white, CONFIG.rawDecimals);
+  $("resultDamage").textContent = fmtPct(res.damage);
+  $("resultContrast").textContent = fmt(res.scores.contrast);
+  $("resultHaze").textContent = fmt(res.scores.haze);
+  $("resultColor").textContent = fmt(res.scores.color, 4);
+  $("resultStripe").textContent = fmt(res.contrastTube) + " / " + fmt(res.contrastClear);
+  $("resultRaw").textContent = fmt(res.tube, 1) + " / " + fmt(res.clear, 1) + " / " + fmt(res.white, 1);
   showWarnings($("resultWarn"), res.warnings);
 }
 
@@ -845,14 +933,13 @@ function escapeHtml(s) {
 // Built-in calibration (from CONFIG) — always used by public mode.
 function getBuiltInCalibration() {
   const B = CONFIG.BUILT_IN_CALIBRATION;
-  if (!B || ![B.freshMean, B.freshSD, B.damagedMean].every((v) => isFinite(Number(v)))) return null;
-  const cut = computeCutoffs(+B.freshMean, +B.freshSD, +B.damagedMean);
-  return {
-    source: "built-in", isPlaceholder: !!B.isPlaceholder, channel: B.channel || CONFIG.channel,
-    freshMean: +B.freshMean, freshSD: +B.freshSD, damagedMean: +B.damagedMean, damagedSD: +B.damagedSD,
-    noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
-    freshRatios: [], damagedRatios: [], savedAt: B.measuredOn,
-  };
+  if (!B || !B.scores || !B.combined) return null;
+  const cal = finishCalibration({
+    version: 2, source: "built-in", isPlaceholder: !!B.isPlaceholder, channel: B.channel || CONFIG.channel,
+    weights: B.weights || CONFIG.analysis.weights, scores: B.scores, combined: B.combined,
+    nFresh: B.nFresh || 0, nDamaged: B.nDamaged || 0, savedAt: B.measuredOn, freshScans: [], damagedScans: [],
+  });
+  return isFinite(cal.noneCutoff) ? cal : null;
 }
 
 // Team mode uses the team's saved calibration if there is one, otherwise the built-in one.
@@ -865,7 +952,9 @@ function updateCalNote() {
   else {
     txt = (state.calibration ? "Using saved team calibration: " :
       "Using BUILT-IN calibration" + (c.isPlaceholder ? " (PLACEHOLDER demo values)" : "") + ": ") +
-      `None < ${fmt(c.noneCutoff)} · Mild < ${fmt(c.mildMax)} · Moderate < ${fmt(c.moderateMax)} · Severe ≥ ${fmt(c.moderateMax)}`;
+      `None < ${fmtPct(c.noneCutoff)} · Mild < ${fmtPct(c.mildMax)} · Moderate < ${fmtPct(c.moderateMax)} · Severe ≥ ${fmtPct(c.moderateMax)}`;
+    const unused = SCORE_KEYS.filter((k) => !scoreUsable(c.scores[k]));
+    if (unused.length) txt += ` · Not used (fresh/damaged too close): ${unused.map((k) => SCORE_NAMES[k]).join(", ")}`;
     if (c.channel && c.channel !== CONFIG.channel)
       txt += ` ⚠ Calibrated with "${c.channel}" channel but CONFIG uses "${CONFIG.channel}" — recalibrate.`;
     if (state.calibration && state.calInMemoryOnly) txt += " (in memory only — export it to keep it)";
@@ -876,7 +965,9 @@ function updateCalNote() {
 async function onScanClick() {
   const res = await runScan($("btnScan"));
   if (!res) return;
-  const level = classify(res.ratio, teamCalibration());
+  const cal = teamCalibration();
+  res.damage = damagePercent(res.scores, cal);
+  const level = classify(res.damage, cal);
   showResult(res, level);
   addLog({ type: "test", res, level: level ? level.name : "Not calibrated" });
 }
@@ -885,12 +976,20 @@ async function onScanClick() {
    PART 5 — Calibration
    ===================================================================== */
 function draftStats() {
-  const fr = state.draft.fresh.map((e) => e.ratio).filter(isFinite);
-  const dr = state.draft.damaged.map((e) => e.ratio).filter(isFinite);
-  const freshMean = mean(fr), freshSD = sd(fr), damagedMean = mean(dr);
-  const cut = isFinite(freshMean) && isFinite(freshSD) && isFinite(damagedMean)
-    ? computeCutoffs(freshMean, freshSD, damagedMean) : null;
-  return { fr, dr, freshMean, freshSD, damagedMean, cut };
+  const f = state.draft.fresh, d = state.draft.damaged;
+  const cal = f.length >= 2 && d.length >= 1
+    ? buildCalibrationFromScans(f.map((e) => e.scores), d.map((e) => e.scores), CONFIG.channel) : null;
+  return { nF: f.length, nD: d.length, cal };
+}
+
+function scoreTableHtml(c) {
+  let h = '<table><thead><tr><th>Score</th><th>Fresh</th><th>Damaged</th><th>Used</th></tr></thead><tbody>';
+  for (const k of SCORE_KEYS) {
+    const s = c.scores[k] || {}, dp = k === "color" ? 4 : 3;
+    h += `<tr><td>${SCORE_NAMES[k]}</td><td class="num">${fmt(s.freshMean, dp)} ± ${fmt(s.freshSD, dp)}</td>` +
+      `<td class="num">${fmt(s.damagedMean, dp)} ± ${fmt(s.damagedSD, dp)}</td><td>${scoreUsable(s) ? "✔" : "✘ too close"}</td></tr>`;
+  }
+  return h + "</tbody></table>";
 }
 
 function renderCalibration() {
@@ -901,7 +1000,8 @@ function renderCalibration() {
     state.draft[type].forEach((e, i) => {
       const li = document.createElement("li");
       const warn = e.warnings && e.warnings.length ? " ⚠" : "";
-      li.innerHTML = `<span>#${i + 1} &nbsp; <b>${fmt(e.ratio)}</b>${warn} <span class="muted">${new Date(e.time).toLocaleTimeString()}</span></span>`;
+      const sc = e.scores || {};
+      li.innerHTML = `<span>#${i + 1} &nbsp; <b>C ${fmt(sc.contrast)} · H ${fmt(sc.haze)} · Col ${fmt(sc.color, 4)}</b>${warn} <span class="muted">${new Date(e.time).toLocaleTimeString()}</span></span>`;
       if (warn) li.title = e.warnings.join("\n");
       const del = document.createElement("button");
       del.textContent = "✕";
@@ -914,24 +1014,25 @@ function renderCalibration() {
       " / " + (type === "fresh" ? C.minFresh : C.minDamaged) + " min";
   }
 
-  const s = draftStats();
-  $("stFreshMean").textContent = fmt(s.freshMean);
-  $("stFreshSD").textContent = fmt(s.freshSD, 4);
-  $("stDmgMean").textContent = fmt(s.damagedMean);
-  $("stDmgSD").textContent = fmt(sd(s.dr), 4);
-  $("stNone").textContent = s.cut ? fmt(s.cut.noneCutoff) : "—";
-  $("stMild").textContent = s.cut ? fmt(s.cut.mildMax) : "—";
-  $("stMod").textContent = s.cut ? fmt(s.cut.moderateMax) : "—";
-  $("stSev").textContent = s.cut ? fmt(s.cut.moderateMax) : "—";
-  $("overlapWarn").hidden = !(s.cut && s.cut.overlap);
+  const s = draftStats(), c = s.cal, cb = c ? c.combined : {};
+  $("stFreshMean").textContent = fmtPct(cb.freshMean);
+  $("stFreshSD").textContent = fmtPct(cb.freshSD);
+  $("stDmgMean").textContent = fmtPct(cb.damagedMean);
+  $("stDmgSD").textContent = fmtPct(cb.damagedSD);
+  $("stNone").textContent = c ? fmtPct(c.noneCutoff) : "—";
+  $("stMild").textContent = c ? fmtPct(c.mildMax) : "—";
+  $("stMod").textContent = c ? fmtPct(c.moderateMax) : "—";
+  $("stSev").textContent = c ? fmtPct(c.moderateMax) : "—";
+  $("scoreStats").innerHTML = c ? scoreTableHtml(c) : "";
+  $("overlapWarn").hidden = !(c && c.overlap);
 
-  $("btnSaveCal").disabled = !(s.fr.length >= C.minFresh && s.dr.length >= C.minDamaged && s.cut);
+  $("btnSaveCal").disabled = !(s.nF >= C.minFresh && s.nD >= C.minDamaged && c && isFinite(c.noneCutoff));
 
-  const c = state.calibration;
-  $("calSavedInfo").textContent = c
-    ? `Active calibration saved ${new Date(c.savedAt).toLocaleString()} (${c.freshRatios.length} fresh, ${c.damagedRatios.length} damaged, channel: ${c.channel})` +
+  const a = state.calibration;
+  $("calSavedInfo").textContent = a
+    ? `Active calibration saved ${new Date(a.savedAt).toLocaleString()} (${a.nFresh} fresh, ${a.nDamaged} damaged, channel: ${a.channel})` +
       (state.calInMemoryOnly ? " — in memory only." : ".")
-    : "No calibration saved yet.";
+    : "No team calibration saved yet (team scans use the built-in one).";
 }
 
 function saveDraft() { store.set(CONFIG.storageKeys.draft, state.draft); }
@@ -939,14 +1040,15 @@ function saveDraft() { store.set(CONFIG.storageKeys.draft, state.draft); }
 async function onCalScan(type) {
   const res = await runScan($(type === "fresh" ? "btnCalFresh" : "btnCalDmg"));
   if (!res) return;
-  const entry ={ id: uid(), ratio: res.ratio, tube: res.tube, white: res.white,
+  const entry = { id: uid(), scores: res.scores, tube: res.tube, clear: res.clear, white: res.white,
     time: res.time.toISOString(), warnings: res.warnings };
   state.draft[type].push(entry);
   saveDraft();
   showWarnings($("calScanWarn"), res.warnings);
+  res.damage = NaN; // calibration scans define the scale, so no damage % for them
   addLog({ type: type === "fresh" ? "fresh" : "damaged", res, level: "", id: entry.id });
   renderCalibration();
-  toast(`${type === "fresh" ? "Fresh" : "Damaged"} #${state.draft[type].length}: ratio ${fmt(res.ratio)}`);
+  toast(`${type === "fresh" ? "Fresh" : "Damaged"} #${state.draft[type].length}: C ${fmt(res.scores.contrast)} · H ${fmt(res.scores.haze)} · Col ${fmt(res.scores.color, 4)}`);
 }
 
 function deleteCalEntry(type, id) {
@@ -956,16 +1058,31 @@ function deleteCalEntry(type, id) {
   renderCalibration(); renderLog();
 }
 
-function buildCalibration(freshRatios, damagedRatios, channel, savedAt) {
-  const freshMean = mean(freshRatios), freshSD = sd(freshRatios), damagedMean = mean(damagedRatios);
-  const cut = computeCutoffs(freshMean, freshSD, damagedMean);
-  return {
-    version: 1, channel, savedAt: savedAt || new Date().toISOString(),
-    freshMean, freshSD, damagedMean, damagedSD: sd(damagedRatios),
-    noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
-    sdMultiplier: CONFIG.calibration.sdMultiplier,
-    freshRatios, damagedRatios,
-  };
+function buildCalibrationFromScans(freshScans, damagedScans, channel, savedAt) {
+  freshScans = freshScans.filter(Boolean); damagedScans = damagedScans.filter(Boolean);
+  const scores = {};
+  for (const k of SCORE_KEYS) {
+    const f = freshScans.map((x) => x[k]).filter(isFinite), d = damagedScans.map((x) => x[k]).filter(isFinite);
+    scores[k] = { freshMean: mean(f), freshSD: sd(f), damagedMean: mean(d), damagedSD: sd(d) };
+  }
+  const weights = Object.assign({}, CONFIG.analysis.weights);
+  const tmp = { scores, weights };
+  const fC = freshScans.map((x) => damagePercent(x, tmp)).filter(isFinite);
+  const dC = damagedScans.map((x) => damagePercent(x, tmp)).filter(isFinite);
+  return finishCalibration({
+    version: 2, channel, savedAt: savedAt || new Date().toISOString(), weights, scores,
+    combined: { freshMean: mean(fC), freshSD: sd(fC), damagedMean: mean(dC), damagedSD: sd(dC) },
+    nFresh: freshScans.length, nDamaged: damagedScans.length, freshScans, damagedScans,
+  });
+}
+
+// Adds the None/Mild/Moderate/Severe cutoffs (in damage %) using the original rules.
+function finishCalibration(c) {
+  const cb = c.combined;
+  const cut = computeCutoffs(+cb.freshMean, +cb.freshSD, +cb.damagedMean);
+  c.noneCutoff = cut.noneCutoff; c.mildMax = cut.mildMax; c.moderateMax = cut.moderateMax; c.overlap = cut.overlap;
+  c.sdMultiplier = CONFIG.calibration.sdMultiplier;
+  return c;
 }
 
 function setActiveCalibration(cal) {
@@ -979,8 +1096,8 @@ function setActiveCalibration(cal) {
 
 function onSaveCalibration() {
   const s = draftStats();
-  const cal = buildCalibration(s.fr, s.dr, CONFIG.channel);
-  if (setActiveCalibration(cal)) toast("Calibration saved ✔");
+  if (!s.cal) return;
+  if (setActiveCalibration(s.cal)) toast("Calibration saved ✔");
 }
 
 function onExportCal() {
@@ -998,25 +1115,24 @@ function onImportFile(ev) {
   reader.onload = () => {
     try {
       const obj = JSON.parse(reader.result);
-      const fr = Array.isArray(obj.freshRatios) ? obj.freshRatios.map(Number).filter(isFinite) : [];
-      const dr = Array.isArray(obj.damagedRatios) ? obj.damagedRatios.map(Number).filter(isFinite) : [];
       let cal;
-      if (fr.length >= 2 && dr.length >= 1) {
-        cal = buildCalibration(fr, dr, obj.channel || CONFIG.channel, obj.savedAt);
-      } else if ([obj.freshMean, obj.freshSD, obj.damagedMean].every((v) => isFinite(Number(v)))) {
-        const cut = computeCutoffs(+obj.freshMean, +obj.freshSD, +obj.damagedMean);
-        cal = { version: 1, channel: obj.channel || CONFIG.channel, savedAt: obj.savedAt || new Date().toISOString(),
-          freshMean: +obj.freshMean, freshSD: +obj.freshSD, damagedMean: +obj.damagedMean, damagedSD: +obj.damagedSD,
-          noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
-          sdMultiplier: CONFIG.calibration.sdMultiplier, freshRatios: fr, damagedRatios: dr };
+      if (Array.isArray(obj.freshScans) && Array.isArray(obj.damagedScans) && obj.freshScans.length >= 2 && obj.damagedScans.length >= 1) {
+        cal = buildCalibrationFromScans(obj.freshScans, obj.damagedScans, obj.channel || CONFIG.channel, obj.savedAt);
+      } else if (obj.scores && obj.combined) {
+        cal = finishCalibration({ version: 2, channel: obj.channel || CONFIG.channel, savedAt: obj.savedAt || new Date().toISOString(),
+          weights: obj.weights || CONFIG.analysis.weights, scores: obj.scores, combined: obj.combined,
+          nFresh: obj.nFresh || 0, nDamaged: obj.nDamaged || 0, freshScans: [], damagedScans: [] });
+      } else if (obj.freshRatios) {
+        throw new Error("this is an old tube ÷ white calibration — recalibrate with the stripe method");
       } else {
         throw new Error("file has no calibration data");
       }
-      // Show the imported ratios in the calibration lists too.
-      const now = new Date().toISOString();
+      if (!isFinite(cal.noneCutoff)) throw new Error("calibration values are incomplete");
+      // Show the imported scans in the calibration lists too.
+      const t = cal.savedAt || new Date().toISOString();
       state.draft = {
-        fresh: fr.map((r) => ({ id: uid(), ratio: r, time: cal.savedAt || now, warnings: [] })),
-        damaged: dr.map((r) => ({ id: uid(), ratio: r, time: cal.savedAt || now, warnings: [] })),
+        fresh: cal.freshScans.map((sc) => ({ id: uid(), scores: sc, time: t, warnings: [] })),
+        damaged: cal.damagedScans.map((sc) => ({ id: uid(), scores: sc, time: t, warnings: [] })),
       };
       saveDraft();
       if (setActiveCalibration(cal)) toast("Calibration imported ✔");
@@ -1047,7 +1163,9 @@ function addLog({ type, res, level, id }) {
     time: res.time.toISOString(),
     type,
     name: $("sampleName").value.trim(),
-    ratio: res.ratio, tube: res.tube, white: res.white,
+    damage: res.damage,
+    contrast: res.scores.contrast, haze: res.scores.haze, color: res.scores.color,
+    tube: res.tube, clear: res.clear, white: res.white,
     level, channel: CONFIG.channel,
     warnings: res.warnings.join(" | "),
   });
@@ -1065,7 +1183,7 @@ function renderLog() {
     tr.innerHTML =
       `<td>${t.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
       `<td>${escapeHtml(l.type)}</td><td>${escapeHtml(l.name)}</td>` +
-      `<td class="num">${fmt(l.ratio)}${l.warnings ? " ⚠" : ""}</td><td>${escapeHtml(l.level || "")}</td>`;
+      `<td class="num">${fmtPct(l.damage)}${l.warnings ? " ⚠" : ""}</td><td>${escapeHtml(l.level || "")}</td>`;
     body.appendChild(tr);
   }
   $("logEmpty").hidden = rows.length > 0;
@@ -1078,12 +1196,13 @@ function csvCell(v) {
 
 function onDownloadCsv() {
   if (!state.log.length) { toast("Log is empty."); return; }
-  const header = ["time", "type", "sample_name", "ratio", "level", "tube_value", "white_value", "channel", "warnings"];
+  const num = (v, d) => (isFinite(v) ? Number(v).toFixed(d) : "");
+  const header = ["time", "type", "sample_name", "damage_pct", "level", "contrast_loss", "haze", "color_shift",
+    "tube_mean", "clear_mean", "white_mean", "channel", "warnings"];
   const lines = [header.join(",")];
   for (const l of state.log) {
-    lines.push([l.time, l.type, l.name, isFinite(l.ratio) ? l.ratio.toFixed(5) : "",
-      l.level, isFinite(l.tube) ? l.tube.toFixed(3) : "", isFinite(l.white) ? l.white.toFixed(3) : "",
-      l.channel, l.warnings].map(csvCell).join(","));
+    lines.push([l.time, l.type, l.name, num(l.damage, 2), l.level, num(l.contrast, 5), num(l.haze, 5), num(l.color, 5),
+      num(l.tube, 3), num(l.clear, 3), num(l.white, 3), l.channel, l.warnings].map(csvCell).join(","));
   }
   const blob = new Blob([lines.join("\r\n")], { type: "text/csv" });
   downloadBlob(blob, "insulin-scans-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv");
@@ -1151,7 +1270,7 @@ async function onPublicScan() {
   if (!res) return;
   const T = CONFIG.publicText;
   let emoji, word, msg, color;
-  const level = res.warnings.length ? null : classify(res.ratio, state.builtInCal);
+  const level = res.warnings.length ? null : classify(damagePercent(res.scores, state.builtInCal), state.builtInCal);
   if (!level) {
     emoji = "⚠️"; word = "Try again"; msg = T.retry; color = "var(--accent)";
   } else {
@@ -1180,18 +1299,23 @@ function hidePublicResult() {
    ===================================================================== */
 function calibrationAsCode(c) {
   const n = (v) => (isFinite(v) ? Number(v).toFixed(5) : "null");
-  const nF = c.freshRatios && c.freshRatios.length ? c.freshRatios.length : 0;
-  const nD = c.damagedRatios && c.damagedRatios.length ? c.damagedRatios.length : 0;
+  const w = c.weights || CONFIG.analysis.weights;
+  const sc = (k) => {
+    const s = c.scores[k] || {};
+    return `      ${k}: { freshMean: ${n(s.freshMean)}, freshSD: ${n(s.freshSD)}, damagedMean: ${n(s.damagedMean)}, damagedSD: ${n(s.damagedSD)} },`;
+  };
+  const cb = c.combined;
   return [
     "BUILT_IN_CALIBRATION: {",
     "    isPlaceholder: false,",
     '    channel: "' + (c.channel || CONFIG.channel) + '",',
-    "    freshMean: " + n(c.freshMean) + ",",
-    "    freshSD: " + n(c.freshSD) + ",",
-    "    damagedMean: " + n(c.damagedMean) + ",",
-    "    damagedSD: " + n(c.damagedSD) + ",",
-    "    nFresh: " + nF + ",",
-    "    nDamaged: " + nD + ",",
+    `    weights: { contrast: ${w.contrast}, haze: ${w.haze}, color: ${w.color} },`,
+    "    scores: {",
+    sc("contrast"), sc("haze"), sc("color"),
+    "    },",
+    `    combined: { freshMean: ${n(cb.freshMean)}, freshSD: ${n(cb.freshSD)}, damagedMean: ${n(cb.damagedMean)}, damagedSD: ${n(cb.damagedSD)} },`,
+    "    nFresh: " + (c.nFresh || 0) + ",",
+    "    nDamaged: " + (c.nDamaged || 0) + ",",
     '    measuredOn: "' + new Date(c.savedAt || Date.now()).toISOString().slice(0, 10) + '",',
     "  },",
   ].join("\n");
@@ -1201,7 +1325,7 @@ async function onCopyCode() {
   let c = state.calibration;
   if (!c) {
     const s = draftStats(), C = CONFIG.calibration;
-    if (s.fr.length >= C.minFresh && s.dr.length >= C.minDamaged && s.cut) c = buildCalibration(s.fr, s.dr, CONFIG.channel);
+    if (s.nF >= C.minFresh && s.nD >= C.minDamaged && s.cal) c = s.cal;
   }
   if (!c) { toast("Save a calibration first (≥" + CONFIG.calibration.minFresh + " fresh, ≥" + CONFIG.calibration.minDamaged + " damaged).", 4000); return; }
   const code = calibrationAsCode(c);
@@ -1215,10 +1339,10 @@ async function onCopyCode() {
 
 function renderBuiltInInfo() {
   const b = state.builtInCal;
-  $("builtInInfo").textContent = !b ? "Missing or invalid BUILT_IN_CALIBRATION in CONFIG." :
-    (b.isPlaceholder ? "⚠ PLACEHOLDER values (demo only). " : "Measured " + b.savedAt + ". ") +
-    `Fresh ${fmt(b.freshMean)} ± ${fmt(b.freshSD, 4)}, damaged ${fmt(b.damagedMean)} ± ${fmt(b.damagedSD, 4)}. ` +
-    `Cutoffs: None < ${fmt(b.noneCutoff)} · Mild < ${fmt(b.mildMax)} · Moderate < ${fmt(b.moderateMax)}.`;
+  if (!b) { $("builtInInfo").textContent = "Missing or invalid BUILT_IN_CALIBRATION in CONFIG — public mode will always say Try again."; return; }
+  $("builtInInfo").innerHTML = escapeHtml((b.isPlaceholder ? "⚠ PLACEHOLDER values (demo only). " : "Measured " + b.savedAt + ". ") +
+    `Damage score: fresh ${fmtPct(b.combined.freshMean)} ± ${fmtPct(b.combined.freshSD)}, damaged ${fmtPct(b.combined.damagedMean)}. ` +
+    `Cutoffs: None < ${fmtPct(b.noneCutoff)} · Mild < ${fmtPct(b.mildMax)} · Moderate < ${fmtPct(b.moderateMax)}.`) + scoreTableHtml(b);
 }
 
 /* =====================================================================
@@ -1240,25 +1364,42 @@ function buildCardSheet() {
   const C = CONFIG.card, vw = C.viewWidthMm, vh = C.viewHeightMm, m = C.marginMm;
   const W = vw + 2 * m, H = vh + 2 * m;
   const r = (v) => Math.round(v * 100) / 100;
-  const tb = CONFIG.boxes.tube, wb = CONFIG.boxes.white;
-  // Box positions in mm on the card (camera view starts at m, m).
-  const tx = m + tb.x / 100 * vw, ty = m + tb.y / 100 * vh, tw = tb.w / 100 * vw, th = (tb.square ? tb.w / 100 * vw : tb.h / 100 * vh);
-  const wx = m + wb.x / 100 * vw, wy = m + wb.y / 100 * vh, ww = wb.w / 100 * vw, wh = (wb.square ? ww : wb.h / 100 * vh);
-  const g = C.tubeOutlineGapMm, s = C.stripeMm, sg = C.stripeGapMm;
+  // Box position in mm on the card (camera view starts at m, m).
+  const mm = (b) => {
+    const w = b.w / 100 * vw;
+    return { x: m + b.x / 100 * vw, y: m + b.y / 100 * vh, w, h: b.square ? w : b.h / 100 * vh };
+  };
+  const T = mm(CONFIG.boxes.tube), K = mm(CONFIG.boxes.clear), Wt = mm(CONFIG.boxes.white);
+  const g = C.tubeOutlineGapMm, eb = C.edgeBarMm, eg = C.edgeBarGapMm, pad = C.stripesPadMm;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${r(W)}mm" height="${r(H)}mm" viewBox="0 0 ${r(W)} ${r(H)}">`;
   svg += `<rect x="0" y="0" width="${r(W)}" height="${r(H)}" fill="#000"/>`;
-  // White alignment stripes just outside the camera view on all four sides.
-  svg += `<rect x="${r(m)}" y="${r(m - sg - s)}" width="${r(vw)}" height="${r(s)}" fill="#fff"/>`;
-  svg += `<rect x="${r(m)}" y="${r(m + vh + sg)}" width="${r(vw)}" height="${r(s)}" fill="#fff"/>`;
-  svg += `<rect x="${r(m - sg - s)}" y="${r(m)}" width="${r(s)}" height="${r(vh)}" fill="#fff"/>`;
-  svg += `<rect x="${r(m + vw + sg)}" y="${r(m)}" width="${r(s)}" height="${r(vh)}" fill="#fff"/>`;
+  // Thin white stripes under the tube AND the uncovered STRIPES-CLEAR area beside it.
+  const x0 = Math.max(m, Math.min(T.x, K.x) - pad), x1 = Math.min(m + vw, Math.max(T.x + T.w, K.x + K.w) + pad);
+  const y0 = Math.max(m, Math.min(T.y, K.y) - pad), y1 = Math.min(m + vh, Math.max(T.y + T.h, K.y + K.h) + pad);
+  const dirH = C.stripeDirection !== "vertical";
+  if (dirH) {
+    for (let y = y0 + C.stripePitchMm / 2; y + C.stripeWidthMm <= y1; y += C.stripePitchMm)
+      svg += `<rect x="${r(x0)}" y="${r(y)}" width="${r(x1 - x0)}" height="${r(C.stripeWidthMm)}" fill="#fff"/>`;
+  } else {
+    for (let x = x0 + C.stripePitchMm / 2; x + C.stripeWidthMm <= x1; x += C.stripePitchMm)
+      svg += `<rect x="${r(x)}" y="${r(y0)}" width="${r(C.stripeWidthMm)}" height="${r(y1 - y0)}" fill="#fff"/>`;
+  }
+  // White edge bars just outside the camera view (for lining the card up under the camera).
+  svg += `<rect x="${r(m)}" y="${r(m - eg - eb)}" width="${r(vw)}" height="${r(eb)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m)}" y="${r(m + vh + eg)}" width="${r(vw)}" height="${r(eb)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m - eg - eb)}" y="${r(m)}" width="${r(eb)}" height="${r(vh)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m + vw + eg)}" y="${r(m)}" width="${r(eb)}" height="${r(vh)}" fill="#fff"/>`;
   // White reference square (exactly the WHITE box).
-  svg += `<rect x="${r(wx)}" y="${r(wy)}" width="${r(ww)}" height="${r(wh)}" fill="#fff"/>`;
-  // Tube outline: dashed grey, drawn just OUTSIDE the TUBE box so the line is not measured.
-  svg += `<rect x="${r(tx - g)}" y="${r(ty - g)}" width="${r(tw + 2 * g)}" height="${r(th + 2 * g)}" fill="none" stroke="#9a9a9a" stroke-width="0.6" stroke-dasharray="2 1.5"/>`;
-  svg += `<text x="${r(tx + tw / 2)}" y="${r(ty + th + g + 4.5)}" fill="#9a9a9a" font-size="3.5" font-family="Arial" text-anchor="middle">TUBE</text>`;
-  svg += `<text x="${r(W / 2)}" y="${r(m - sg - s - 2.5)}" fill="#9a9a9a" font-size="3.5" font-family="Arial" text-anchor="middle">▲ TOP of camera picture</text>`;
+  svg += `<rect x="${r(Wt.x)}" y="${r(Wt.y)}" width="${r(Wt.w)}" height="${r(Wt.h)}" fill="#fff"/>`;
+  // Tube outline on the stripes: dashed, drawn just OUTSIDE the TUBE box so the line is not measured.
+  svg += `<rect x="${r(T.x - g)}" y="${r(T.y - g)}" width="${r(T.w + 2 * g)}" height="${r(T.h + 2 * g)}" fill="none" stroke="#00b7d4" stroke-width="0.7" stroke-dasharray="2 1.5"/>`;
+  // Labels (in the black area, outside the measured boxes).
+  const lbl = (x, y, t) => `<text x="${r(x)}" y="${r(y)}" fill="#bdbdbd" font-size="3.2" font-family="Arial" text-anchor="middle">${t}</text>`;
+  svg += lbl(T.x + T.w / 2, Math.min(y1, T.y + T.h + g) + 4.5, "TUBE");
+  svg += lbl(K.x + K.w / 2, y0 - 2, "CLEAR – keep uncovered");
+  svg += lbl(Wt.x + Wt.w / 2, Wt.y + Wt.h + 4.5, "WHITE");
+  svg += lbl(W / 2, m - eg - eb - 2.5, "▲ TOP of camera picture");
   svg += `</svg>`;
 
   const bar = C.scaleBarMm;
@@ -1270,16 +1411,17 @@ function buildCardSheet() {
   }
   scale += `</svg>`;
 
+  const b = CONFIG.boxes, bx = (k) => `${k.toUpperCase()} x ${b[k].x}%, y ${b[k].y}%, w ${b[k].w}%${b[k].square ? " (square)" : ", h " + b[k].h + "%"}`;
   return `<h2>Insulin Check — scan card</h2>
     <p>Print at 100% (Actual size) on US Letter. Cut out along the black edge and glue it flat on the floor of the box.
-      Line it up so the white stripes sit just outside the edges of the camera picture, and the TUBE / WHITE boxes on screen
-      sit over the dashed tube outline and the white square.</p>
+      Line it up so the white edge bars sit just outside the edges of the camera picture. On screen, TUBE must sit on the dashed
+      tube outline, STRIPES-CLEAR on the uncovered stripes beside it, and WHITE on the white square.</p>
     ${svg}
     <p style="margin-top:6mm"><b>Scale check — this bar must measure exactly ${bar / 10} cm:</b></p>
     ${scale}
     <p>cm. If it doesn't, reprint with "Fit to page" turned off.</p>
-    <p style="color:#555;font-size:9pt">Settings used: camera view ${vw} × ${vh} mm; TUBE box x ${tb.x}%, y ${tb.y}%, w ${tb.w}%, h ${tb.h}%;
-      WHITE box x ${wb.x}%, y ${wb.y}%, w ${wb.w}%${wb.square ? " (square)" : ", h " + wb.h + "%"}. Reprint if CONFIG.boxes or CONFIG.card change.</p>`;
+    <p style="color:#555;font-size:9pt">Settings used: camera view ${vw} × ${vh} mm; stripes ${C.stripeWidthMm} mm every ${C.stripePitchMm} mm (${dirH ? "horizontal" : "vertical"});
+      ${bx("tube")}; ${bx("clear")}; ${bx("white")}. Reprint if CONFIG.boxes or CONFIG.card change.</p>`;
 }
 
 function openPrintCard() {
@@ -1325,7 +1467,11 @@ function init() {
   $("demoBanner").hidden = !!(state.builtInCal && !state.builtInCal.isPlaceholder);
   state.calibration = store.get(CONFIG.storageKeys.calibration);
   const draft = store.get(CONFIG.storageKeys.draft);
-  if (draft && Array.isArray(draft.fresh) && Array.isArray(draft.damaged)) state.draft = draft;
+  if (draft && Array.isArray(draft.fresh) && Array.isArray(draft.damaged)) {
+    const ok = (e) => e && e.scores;
+    state.draft = { fresh: draft.fresh.filter(ok), damaged: draft.damaged.filter(ok) };
+  }
+  if (state.calibration && (state.calibration.version !== 2 || !state.calibration.scores)) state.calibration = null;
   const log = store.get(CONFIG.storageKeys.log);
   if (Array.isArray(log)) state.log = log;
 

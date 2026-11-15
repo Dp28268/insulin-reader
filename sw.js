@@ -4,7 +4,7 @@
   the cache in the background when online, so updates appear on the next open.
   Bump CACHE_VERSION if you add or rename files below.
 */
-var CACHE_VERSION = "insulin-check-v2";
+var CACHE_VERSION = "insulin-check-v3";
 var ASSETS = [
   "./",
   "./index.html",
