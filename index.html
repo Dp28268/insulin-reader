@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<!--
+  Insulin Heat-Damage Reader (curcumin fluorescence)
+  ---------------------------------------------------
+  Single-file web app: plain HTML + CSS + JavaScript, no libraries, no build step.
+
+  IMPORTANT: The camera (getUserMedia) only works on a SECURE origin:
+    - https://...  (e.g. GitHub Pages), or
+    - http://localhost  (for testing on a computer)
+  Opening this file as file:// or over plain http on a LAN IP will NOT give camera access.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Insulin Damage Reader</title>
+<style>
+  :root {
+    --bg: #000; --panel: #141414; --panel2: #1f1f1f; --text: #fff; --muted: #b8b8b8;
+    --accent: #ffd400; --ok: #2ecc40; --mild: #ffdc00; --mod: #ff851b; --sev: #ff4136;
+    --border: #3a3a3a; --tab-h: 68px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 18px; }
+  body { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 12px); }
+  button { font: inherit; color: inherit; cursor: pointer; border: 2px solid var(--border);
+    background: var(--panel2); border-radius: 12px; min-height: 52px; padding: 10px 16px; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: scale(.98); }
+  input[type=text] { font: inherit; width: 100%; min-height: 52px; padding: 10px 14px;
+    background: #fff; color: #000; border-radius: 12px; border: 2px solid var(--border); }
+  label { display: block; color: var(--muted); margin: 0 0 6px; font-size: 16px; }
+
+  /* ---------- Camera ---------- */
+  .cam-wrap { position: relative; width: 100%; margin: 0 auto; background: #111; aspect-ratio: 4 / 3; overflow: hidden; }
+  .cam-wrap video { display: block; width: 100%; height: 100%; }
+  .roi { position: absolute; border: 3px solid; pointer-events: none; }
+  .roi span { position: absolute; top: -26px; left: -3px; font-size: 14px; font-weight: 800;
+    padding: 2px 6px; color: #000; white-space: nowrap; }
+  .roi.tube { border-color: #00e5ff; } .roi.tube span { background: #00e5ff; }
+  .roi.white { border-color: #ff00e5; aspect-ratio: 1 / 1; } .roi.white span { background: #ff00e5; }
+  .cam-msg { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+    align-items: center; justify-content: center; text-align: center; padding: 20px; background: rgba(0,0,0,.85); }
+  .cam-msg[hidden] { display: none; }
+  .status { padding: 8px 14px; font-size: 15px; color: var(--muted); display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .status.warn { color: var(--accent); }
+  .status button { min-height: 40px; padding: 4px 12px; font-size: 15px; flex: 0 0 auto; }
+
+  /* ---------- Panels ---------- */
+  main { padding: 12px 14px; max-width: 640px; margin: 0 auto; }
+  .panel[hidden] { display: none; }
+  .card { background: var(--panel); border: 2px solid var(--border); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+  .big-btn { width: 100%; min-height: 84px; font-size: 28px; font-weight: 800; border: none;
+    background: var(--accent); color: #000; border-radius: 18px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > button { flex: 1 1 140px; }
+  .btn-fresh { background: #0b3d1a; border-color: var(--ok); font-weight: 700; min-height: 72px; }
+  .btn-dmg { background: #4a0f0b; border-color: var(--sev); font-weight: 700; min-height: 72px; }
+  .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 800; }
+
+  .result-level { font-size: 44px; font-weight: 900; line-height: 1.1; margin: 4px 0 10px; }
+  .lvl-none { color: var(--ok); } .lvl-mild { color: var(--mild); } .lvl-mod { color: var(--mod); }
+  .lvl-sev { color: var(--sev); } .lvl-nc { color: var(--muted); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 18px; }
+  .kv b { font-variant-numeric: tabular-nums; font-size: 22px; }
+  .warn-box { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #3d2f00;
+    border: 2px solid var(--accent); color: var(--accent); font-weight: 600; font-size: 16px; }
+  .warn-box[hidden] { display: none; }
+  .warn-box ul { margin: 0; padding-left: 20px; }
+  .muted { color: var(--muted); font-size: 15px; }
+
+  .list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
+  .list li { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 4px 6px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .list li button { min-height: 44px; min-width: 52px; padding: 4px 10px; background: #3a0d0a; border-color: #7a2a24; }
+  h2 { font-size: 22px; margin: 0 0 10px; }
+  h3 { font-size: 19px; margin: 0 0 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  td.num { font-variant-numeric: tabular-nums; }
+  .table-wrap { max-height: 50vh; overflow: auto; }
+
+  /* ---------- Bottom tabs (one-handed) ---------- */
+  nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: #0a0a0a;
+    border-top: 2px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 10; }
+  nav.tabs button { flex: 1; min-height: var(--tab-h); border: none; border-radius: 0; background: transparent;
+    font-size: 18px; font-weight: 700; color: var(--muted); }
+  nav.tabs button[aria-selected="true"] { color: #000; background: var(--accent); }
+
+  .toast { position: fixed; left: 50%; bottom: calc(var(--tab-h) + 20px); transform: translateX(-50%);
+    background: #fff; color: #000; padding: 12px 18px; border-radius: 12px; font-weight: 700;
+    max-width: 90vw; z-index: 20; box-shadow: 0 4px 20px rgba(0,0,0,.6); }
+  .toast[hidden] { display: none; }
+  canvas#work { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ================= CAMERA VIEW ================= -->
+<div class="cam-wrap" id="camWrap">
+  <video id="video" autoplay playsinline muted></video>
+  <div id="overlays"></div>
+  <div class="cam-msg" id="camMsg">
+    <div id="camMsgText">Starting camera…</div>
+    <button id="btnStartCam" class="btn-primary" hidden>Start camera</button>
+  </div>
+</div>
+<div class="status" id="camStatus"><span id="camStatusText">Camera not started</span>
+  <button id="btnRelock" hidden title="Re-measure and lock exposure / white balance / focus">Re-lock</button>
+</div>
+<canvas id="work"></canvas>
+
+<main>
+  <!-- ================= SCAN TAB ================= -->
+  <section class="panel" id="panel-scan">
+    <div class="card">
+      <label for="sampleName">Sample name (optional)</label>
+      <input type="text" id="sampleName" placeholder="e.g. Vial A – 40 °C 2 h" autocomplete="off">
+    </div>
+
+    <div class="card" id="resultCard">
+      <div class="muted" id="resultTime">No scan yet</div>
+      <div class="result-level lvl-nc" id="resultLevel">—</div>
+      <div class="kv">
+        <span>Ratio (tube ÷ white)</span><b id="resultRatio">—</b>
+        <span>Tube value</span><b id="resultTube">—</b>
+        <span>White value</span><b id="resultWhite">—</b>
+      </div>
+      <div class="warn-box" id="resultWarn" hidden></div>
+      <div class="muted" id="calNote" style="margin-top:10px"></div>
+    </div>
+
+    <button class="big-btn" id="btnScan" disabled>Scan</button>
+  </section>
+
+  <!-- ================= CALIBRATION TAB ================= -->
+  <section class="panel" id="panel-cal" hidden>
+    <div class="card">
+      <h2>Calibration</h2>
+      <p class="muted" style="margin-top:0">Scan known samples. Need at least <span id="minFreshTxt"></span> fresh
+        and <span id="minDmgTxt"></span> fully damaged scans. Use the same box, LED and dye amount as for testing.</p>
+      <div class="row">
+        <button class="btn-fresh" id="btnCalFresh" disabled>Scan FRESH sample</button>
+        <button class="btn-dmg" id="btnCalDmg" disabled>Scan FULLY DAMAGED sample</button>
+      </div>
+      <div class="warn-box" id="calScanWarn" hidden></div>
+    </div>
+
+    <div class="card">
+      <h3>Fresh scans: <span id="freshCount">0</span></h3>
+      <ul class="list" id="freshList"></ul>
+    </div>
+    <div class="card">
+      <h3>Damaged scans: <span id="dmgCount">0</span></h3>
+      <ul class="list" id="dmgList"></ul>
+    </div>
+
+    <div class="card">
+      <h3>Statistics &amp; cutoffs</h3>
+      <div class="kv" id="calStats">
+        <span>Fresh mean</span><b id="stFreshMean">—</b>
+        <span>Fresh SD</span><b id="stFreshSD">—</b>
+        <span>Damaged mean</span><b id="stDmgMean">—</b>
+        <span>🟢 None if ratio &lt;</span><b id="stNone">—</b>
+        <span>🟡 Mild if &lt;</span><b id="stMild">—</b>
+        <span>🟠 Moderate if &lt;</span><b id="stMod">—</b>
+        <span>🔴 Severe if ≥</span><b id="stSev">—</b>
+      </div>
+      <div class="warn-box" id="overlapWarn" hidden>Fresh and damaged overlap — check LED, filter, or dye amount.</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn-primary" id="btnSaveCal" disabled>Save calibration</button>
+      </div>
+      <p class="muted" id="calSavedInfo"></p>
+    </div>
+
+    <div class="card">
+      <h3>Move calibration between phones</h3>
+      <div class="row">
+        <button id="btnExportCal">Export JSON</button>
+        <button id="btnImportCal">Import JSON</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+      <div class="row" style="margin-top:10px">
+        <button id="btnClearCalLists">Start new calibration</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LOG TAB ================= -->
+  <section class="panel" id="panel-log" hidden>
+    <div class="card">
+      <h2>Data log</h2>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn-primary" id="btnCsv">Download CSV</button>
+        <button id="btnClearLog">Clear log</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Type</th><th>Sample</th><th>Ratio</th><th>Level</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+      <p class="muted" id="logEmpty">No scans yet.</p>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
+  <button role="tab" data-tab="cal" aria-selected="false">Calibrate</button>
+  <button role="tab" data-tab="log" aria-selected="false">Log</button>
+</nav>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   CONFIG — every adjustable number lives here.
+   ===================================================================== */
+const CONFIG = {
+  // Measurement boxes, in PERCENT of the camera frame.
+  //   x, y = top-left corner;  w = width;  h = height.
+  //   square: true -> height is made equal to width in pixels (h is ignored).
+  boxes: {
+    tube:  { label: "TUBE",  x: 30, y: 25, w: 18, h: 50 },
+    white: { label: "WHITE", x: 65, y: 42, w: 12, h: 12, square: true },
+  },
+
+  // Which colour value to measure: "green" (default, matches ~500 nm emission),
+  // "luminance", "red", or "blue".
+  channel: "green",
+
+  // Scan: number of frames averaged and delay between them (ms).
+  scan: { frames: 5, intervalMs: 100 },
+
+  // Quality checks.
+  qc: {
+    saturationValue: 255,        // a pixel at this value is "overexposed"
+    maxSaturatedFraction: 0.05,  // warn if more than 5% of a box's pixels are overexposed
+    minWhiteValue: 20,           // warn if white patch average is below this (too dark)
+  },
+
+  // Calibration rules.
+  calibration: {
+    minFresh: 10,            // fresh scans required before saving
+    minDamaged: 5,           // damaged scans required before saving
+    sdMultiplier: 3,         // None cutoff = freshMean + sdMultiplier × freshSD
+    overlapMinGapSD: 3,      // warn if damagedMean is less than this many fresh SDs above the None cutoff
+  },
+
+  // Camera request + locking.
+  camera: {
+    idealWidth: 1280,
+    idealHeight: 720,
+    warmupMs: 1500,          // let auto-exposure settle before locking
+    lockExposure: true,
+    lockWhiteBalance: true,
+    lockFocus: true,
+    exposureTime: null,      // null = keep the auto-measured value; or a number in the camera's units (Chrome: 100 µs)
+    iso: null,               // null = keep current; or a number like 100
+  },
+
+  decimals: 3,               // ratio decimals shown
+  rawDecimals: 1,            // decimals for raw tube/white values
+
+  storageKeys: {
+    calibration: "insulinReader.calibration.v1",
+    draft: "insulinReader.calDraft.v1",
+    log: "insulinReader.log.v1",
+  },
+};
+
+/* =====================================================================
+   Helpers
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const fmt = (v, d = CONFIG.decimals) => (v == null || !isFinite(v) ? "—" : Number(v).toFixed(d));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+let toastTimer = null;
+function toast(msg, ms = 2500) {
+  const t = $("toast");
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
+}
+
+// localStorage wrapper that never throws.
+const store = {
+  get(key) {
+    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
+    catch (e) { return null; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (e) { return false; }
+  },
+  remove(key) { try { localStorage.removeItem(key); } catch (e) {} },
+};
+
+function mean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN; }
+function sd(a) { // sample standard deviation (n − 1)
+  if (a.length < 2) return NaN;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
+}
+
+/* =====================================================================
+   State
+   ===================================================================== */
+const state = {
+  stream: null,
+  track: null,
+  scanning: false,
+  calibration: null,           // saved/active calibration object
+  calInMemoryOnly: false,
+  draft: { fresh: [], damaged: [] }, // each entry: {id, ratio, tube, white, time, warnings}
+  log: [],                     // {id, time, type, name, ratio, level, tube, white, channel, warnings}
+};
+
+/* =====================================================================
+   PART 1 — Camera
+   ===================================================================== */
+const video = $("video");
+
+function drawOverlays() {
+  const host = $("overlays");
+  host.innerHTML = "";
+  for (const key of ["tube", "white"]) {
+    const b = CONFIG.boxes[key];
+    const el = document.createElement("div");
+    el.className = "roi " + key;
+    el.style.left = b.x + "%";
+    el.style.top = b.y + "%";
+    el.style.width = b.w + "%";
+    if (!b.square) el.style.height = b.h + "%";
+    const s = document.createElement("span");
+    s.textContent = b.label;
+    el.appendChild(s);
+    host.appendChild(el);
+  }
+}
+
+function sizeCameraBox() {
+  // Make the preview box exactly the video's aspect ratio so the % overlays line up with the frame.
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const wrap = $("camWrap");
+  wrap.style.aspectRatio = vw + " / " + vh;
+  // Keep a tall portrait stream from pushing the controls off-screen.
+  wrap.style.maxWidth = "calc(60vh * " + (vw / vh).toFixed(4) + ")";
+}
+
+function showCamMessage(text, showButton) {
+  $("camMsg").hidden = false;
+  $("camMsgText").textContent = text;
+  $("btnStartCam").hidden = !showButton;
+}
+
+function setCamStatus(text, warn) {
+  $("camStatusText").textContent = text;
+  $("camStatus").classList.toggle("warn", !!warn);
+}
+
+async function startCamera() {
+  if (!window.isSecureContext) {
+    showCamMessage("Camera needs a secure page (https:// or localhost). Open this app from its https link.", false);
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCamMessage("This browser does not support camera access. Try Chrome (Android) or Safari (iPhone).", false);
+    return;
+  }
+  showCamMessage("Starting camera…", false);
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: CONFIG.camera.idealWidth },
+        height: { ideal: CONFIG.camera.idealHeight },
+      },
+    });
+    state.stream = stream;
+    state.track = stream.getVideoTracks()[0];
+    video.srcObject = stream;
+    await new Promise((res) => {
+      if (video.readyState >= 1) return res();
+      video.onloadedmetadata = () => res();
+    });
+    try { await video.play(); } catch (e) { /* autoplay blocked: button below */ }
+    if (video.paused) { showCamMessage("Tap to start the preview.", true); return; }
+    onCameraReady();
+  } catch (err) {
+    console.error(err);
+    let msg;
+    if (err.name === "NotAllowedError" || err.name === "SecurityError") {
+      msg = "Camera permission was denied. Allow camera access for this site in your browser settings (tap the lock icon next to the address), then reload.";
+    } else if (err.name === "NotFoundError" || err.name === "OverconstrainedError") {
+      msg = "No usable camera was found on this device.";
+    } else if (err.name === "NotReadableError") {
+      msg = "The camera is in use by another app. Close other camera apps and try again.";
+    } else {
+      msg = "Could not start the camera: " + (err.message || err.name);
+    }
+    showCamMessage(msg, true);
+    setCamStatus("Camera not available", true);
+  }
+}
+
+async function onCameraReady() {
+  $("camMsg").hidden = true;
+  sizeCameraBox();
+  video.addEventListener("resize", sizeCameraBox);
+  setScanButtonsEnabled(true);
+  setCamStatus("Camera on — measuring light, then locking settings…");
+  await sleep(CONFIG.camera.warmupMs);
+  await lockCamera();
+  $("btnRelock").hidden = false;
+}
+
+// Try to lock exposure, white balance and focus (works mainly on Chrome for Android).
+async function lockCamera() {
+  const track = state.track;
+  const wanted = [];
+  if (CONFIG.camera.lockExposure) wanted.push("exposure");
+  if (CONFIG.camera.lockWhiteBalance) wanted.push("white balance");
+  if (CONFIG.camera.lockFocus) wanted.push("focus");
+  const locked = [];
+
+  let caps = {}, settings = {};
+  try { caps = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) {}
+  try { settings = track.getSettings ? track.getSettings() : {}; } catch (e) {}
+
+  async function tryApply(name, constraint, check) {
+    try {
+      await track.applyConstraints({ advanced: [constraint] });
+      const s = track.getSettings ? track.getSettings() : {};
+      if (check(s)) locked.push(name);
+    } catch (e) { console.warn("Could not lock " + name, e); }
+  }
+
+  // If modes are currently manual, first return to continuous so we re-measure for a re-lock.
+  try {
+    const back = {};
+    if (caps.exposureMode && caps.exposureMode.includes("continuous")) back.exposureMode = "continuous";
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes("continuous")) back.whiteBalanceMode = "continuous";
+    if (caps.focusMode && caps.focusMode.includes("continuous")) back.focusMode = "continuous";
+    if (Object.keys(back).length && settings.exposureMode === "manual") {
+      await track.applyConstraints({ advanced: [back] });
+      await sleep(CONFIG.camera.warmupMs);
+      settings = track.getSettings();
+    }
+  } catch (e) {}
+
+  if (CONFIG.camera.lockExposure && caps.exposureMode && caps.exposureMode.includes("manual")) {
+    const c = { exposureMode: "manual" };
+    const t = CONFIG.camera.exposureTime ?? settings.exposureTime;
+    if (t != null && caps.exposureTime) c.exposureTime = clamp(t, caps.exposureTime.min, caps.exposureTime.max);
+    const iso = CONFIG.camera.iso ?? settings.iso;
+    if (iso != null && caps.iso) c.iso = clamp(iso, caps.iso.min, caps.iso.max);
+    await tryApply("exposure", c, (s) => s.exposureMode === "manual");
+  }
+  if (CONFIG.camera.lockWhiteBalance && caps.whiteBalanceMode && caps.whiteBalanceMode.includes("manual")) {
+    const c = { whiteBalanceMode: "manual" };
+    if (settings.colorTemperature && caps.colorTemperature) {
+      c.colorTemperature = clamp(settings.colorTemperature, caps.colorTemperature.min, caps.colorTemperature.max);
+    }
+    await tryApply("white balance", c, (s) => s.whiteBalanceMode === "manual");
+  }
+  if (CONFIG.camera.lockFocus && caps.focusMode && caps.focusMode.includes("manual")) {
+    const c = { focusMode: "manual" };
+    if (settings.focusDistance != null && caps.focusDistance) {
+      c.focusDistance = clamp(settings.focusDistance, caps.focusDistance.min, caps.focusDistance.max);
+    }
+    await tryApply("focus", c, (s) => s.focusMode === "manual");
+  }
+
+  if (locked.length === 0) {
+    setCamStatus("Camera settings not locked — white patch will correct for lighting.", true);
+  } else if (locked.length < wanted.length) {
+    const missing = wanted.filter((w) => !locked.includes(w));
+    setCamStatus("Locked: " + locked.join(", ") + ". Not locked: " + missing.join(", ") +
+      " — white patch will correct for lighting.", true);
+  } else {
+    setCamStatus("Camera locked: " + locked.join(", ") + ".");
+  }
+}
+
+/* =====================================================================
+   PART 2 + 3 — Scan and analysis
+   ===================================================================== */
+function boxToPixels(b, vw, vh) {
+  let x = Math.round((b.x / 100) * vw);
+  let y = Math.round((b.y / 100) * vh);
+  let w = Math.round((b.w / 100) * vw);
+  let h = b.square ? w : Math.round((b.h / 100) * vh);
+  x = clamp(x, 0, vw - 1); y = clamp(y, 0, vh - 1);
+  w = clamp(w, 1, vw - x); h = clamp(h, 1, vh - y);
+  return { x, y, w, h };
+}
+
+// Returns {value, satTest} functions for the chosen channel.
+function channelFns(channel) {
+  const S = CONFIG.qc.saturationValue;
+  switch (channel) {
+    case "red":  return { value: (r, g, b) => r, sat: (r, g, b) => r >= S };
+    case "blue": return { value: (r, g, b) => b, sat: (r, g, b) => b >= S };
+    case "luminance":
+      return { value: (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b,
+               sat: (r, g, b) => r >= S || g >= S || b >= S };
+    case "green":
+    default:     return { value: (r, g, b) => g, sat: (r, g, b) => g >= S };
+  }
+}
+
+async function captureAndAnalyze() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) throw new Error("Camera not ready");
+  const canvas = $("work");
+  canvas.width = vw; canvas.height = vh;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const fns = channelFns(CONFIG.channel);
+
+  const boxes = {
+    tube: { rect: boxToPixels(CONFIG.boxes.tube, vw, vh), sum: 0, n: 0, sat: 0 },
+    white: { rect: boxToPixels(CONFIG.boxes.white, vw, vh), sum: 0, n: 0, sat: 0 },
+  };
+
+  for (let f = 0; f < CONFIG.scan.frames; f++) {
+    ctx.drawImage(video, 0, 0, vw, vh);
+    for (const key in boxes) {
+      const B = boxes[key], r = B.rect;
+      const d = ctx.getImageData(r.x, r.y, r.w, r.h).data;
+      for (let i = 0; i < d.length; i += 4) {
+        const R = d[i], G = d[i + 1], Bl = d[i + 2];
+        B.sum += fns.value(R, G, Bl);
+        if (fns.sat(R, G, Bl)) B.sat++;
+        B.n++;
+      }
+    }
+    if (f < CONFIG.scan.frames - 1) await sleep(CONFIG.scan.intervalMs);
+  }
+
+  // Averaging all pixels over all frames = averaging the frames first, then the box.
+  const tube = boxes.tube.sum / boxes.tube.n;
+  const white = boxes.white.sum / boxes.white.n;
+  const ratio = white > 0 ? tube / white : NaN;
+
+  const warnings = [];
+  const tubeSat = boxes.tube.sat / boxes.tube.n;
+  const whiteSat = boxes.white.sat / boxes.white.n;
+  if (tubeSat > CONFIG.qc.maxSaturatedFraction)
+    warnings.push(`TUBE overexposed (${(tubeSat * 100).toFixed(1)}% pixels at ${CONFIG.qc.saturationValue}) — reduce LED brightness or exposure.`);
+  if (whiteSat > CONFIG.qc.maxSaturatedFraction)
+    warnings.push(`WHITE overexposed (${(whiteSat * 100).toFixed(1)}% pixels at ${CONFIG.qc.saturationValue}) — ratio will be wrong. Dim the light or use a greyer patch.`);
+  if (white < CONFIG.qc.minWhiteValue)
+    warnings.push(`WHITE too dark (average ${white.toFixed(1)} < ${CONFIG.qc.minWhiteValue}) — check LED and box position.`);
+  if (!isFinite(ratio)) warnings.push("White value is zero — cannot compute ratio.");
+
+  return { tube, white, ratio, warnings, time: new Date() };
+}
+
+function setScanButtonsEnabled(on) {
+  const ready = on && !!state.track;
+  $("btnScan").disabled = !ready;
+  $("btnCalFresh").disabled = !ready;
+  $("btnCalDmg").disabled = !ready;
+}
+
+async function runScan() {
+  if (state.scanning) return null;
+  state.scanning = true;
+  setScanButtonsEnabled(false);
+  const oldText = $("btnScan").textContent;
+  $("btnScan").textContent = "Scanning…";
+  try {
+    const res = await captureAndAnalyze();
+    if (navigator.vibrate) navigator.vibrate(60);
+    return res;
+  } catch (e) {
+    toast("Scan failed: " + e.message);
+    return null;
+  } finally {
+    $("btnScan").textContent = oldText;
+    state.scanning = false;
+    setScanButtonsEnabled(true);
+  }
+}
+
+/* =====================================================================
+   PART 4 — Result levels
+   ===================================================================== */
+const LEVELS = {
+  none:     { key: "none",     emoji: "🟢", name: "None",     cls: "lvl-none" },
+  mild:     { key: "mild",     emoji: "🟡", name: "Mild",     cls: "lvl-mild" },
+  moderate: { key: "moderate", emoji: "🟠", name: "Moderate", cls: "lvl-mod" },
+  severe:   { key: "severe",   emoji: "🔴", name: "Severe",   cls: "lvl-sev" },
+};
+
+function computeCutoffs(freshMean, freshSD, damagedMean) {
+  const noneCutoff = freshMean + CONFIG.calibration.sdMultiplier * freshSD;
+  const range = damagedMean - noneCutoff;
+  // If range <= 0 (overlap), anything at/above the None cutoff is reported as Severe.
+  const r = Math.max(range, 0);
+  return {
+    noneCutoff,
+    mildMax: noneCutoff + r / 3,
+    moderateMax: noneCutoff + (2 * r) / 3,
+    overlap: damagedMean - noneCutoff < CONFIG.calibration.overlapMinGapSD * freshSD || range <= 0,
+  };
+}
+
+function classify(ratio, cal) {
+  if (!cal || !isFinite(ratio)) return null;
+  if (ratio < cal.noneCutoff) return LEVELS.none;
+  if (ratio < cal.mildMax) return LEVELS.mild;
+  if (ratio < cal.moderateMax) return LEVELS.moderate;
+  return LEVELS.severe;
+}
+
+function showResult(res, level) {
+  $("resultTime").textContent = "Scanned " + res.time.toLocaleTimeString() +
+    ($("sampleName").value.trim() ? " — " + $("sampleName").value.trim() : "");
+  const el = $("resultLevel");
+  if (level) { el.textContent = level.emoji + " " + level.name; el.className = "result-level " + level.cls; }
+  else { el.textContent = "⚪ Not calibrated"; el.className = "result-level lvl-nc"; }
+  $("resultRatio").textContent = fmt(res.ratio);
+  $("resultTube").textContent = fmt(res.tube, CONFIG.rawDecimals);
+  $("resultWhite").textContent = fmt(res.white, CONFIG.rawDecimals);
+  showWarnings($("resultWarn"), res.warnings);
+}
+
+function showWarnings(box, warnings) {
+  if (!warnings || !warnings.length) { box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  box.innerHTML = "⚠ <ul>" + warnings.map((w) => "<li>" + escapeHtml(w) + "</li>").join("") + "</ul>";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function updateCalNote() {
+  const c = state.calibration;
+  let txt;
+  if (!c) txt = "Not calibrated — go to the Calibrate tab to set levels.";
+  else {
+    txt = `Calibration: None < ${fmt(c.noneCutoff)} · Mild < ${fmt(c.mildMax)} · Moderate < ${fmt(c.moderateMax)} · Severe ≥ ${fmt(c.moderateMax)}`;
+    if (c.channel && c.channel !== CONFIG.channel)
+      txt += ` ⚠ Calibrated with "${c.channel}" channel but CONFIG uses "${CONFIG.channel}" — recalibrate.`;
+    if (state.calInMemoryOnly) txt += " (in memory only — export it to keep it)";
+  }
+  $("calNote").textContent = txt;
+}
+
+async function onScanClick() {
+  const res = await runScan();
+  if (!res) return;
+  const level = classify(res.ratio, state.calibration);
+  showResult(res, level);
+  addLog({ type: "test", res, level: level ? level.name : "Not calibrated" });
+}
+
+/* =====================================================================
+   PART 5 — Calibration
+   ===================================================================== */
+function draftStats() {
+  const fr = state.draft.fresh.map((e) => e.ratio).filter(isFinite);
+  const dr = state.draft.damaged.map((e) => e.ratio).filter(isFinite);
+  const freshMean = mean(fr), freshSD = sd(fr), damagedMean = mean(dr);
+  const cut = isFinite(freshMean) && isFinite(freshSD) && isFinite(damagedMean)
+    ? computeCutoffs(freshMean, freshSD, damagedMean) : null;
+  return { fr, dr, freshMean, freshSD, damagedMean, cut };
+}
+
+function renderCalibration() {
+  const C = CONFIG.calibration;
+  for (const [type, listId, countId] of [["fresh", "freshList", "freshCount"], ["damaged", "dmgList", "dmgCount"]]) {
+    const list = $(listId);
+    list.innerHTML = "";
+    state.draft[type].forEach((e, i) => {
+      const li = document.createElement("li");
+      const warn = e.warnings && e.warnings.length ? " ⚠" : "";
+      li.innerHTML = `<span>#${i + 1} &nbsp; <b>${fmt(e.ratio)}</b>${warn} <span class="muted">${new Date(e.time).toLocaleTimeString()}</span></span>`;
+      if (warn) li.title = e.warnings.join("\n");
+      const del = document.createElement("button");
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Delete scan " + (i + 1));
+      del.onclick = () => deleteCalEntry(type, e.id);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+    $(countId).textContent = state.draft[type].length +
+      " / " + (type === "fresh" ? C.minFresh : C.minDamaged) + " min";
+  }
+
+  const s = draftStats();
+  $("stFreshMean").textContent = fmt(s.freshMean);
+  $("stFreshSD").textContent = fmt(s.freshSD, 4);
+  $("stDmgMean").textContent = fmt(s.damagedMean);
+  $("stNone").textContent = s.cut ? fmt(s.cut.noneCutoff) : "—";
+  $("stMild").textContent = s.cut ? fmt(s.cut.mildMax) : "—";
+  $("stMod").textContent = s.cut ? fmt(s.cut.moderateMax) : "—";
+  $("stSev").textContent = s.cut ? fmt(s.cut.moderateMax) : "—";
+  $("overlapWarn").hidden = !(s.cut && s.cut.overlap);
+
+  $("btnSaveCal").disabled = !(s.fr.length >= C.minFresh && s.dr.length >= C.minDamaged && s.cut);
+
+  const c = state.calibration;
+  $("calSavedInfo").textContent = c
+    ? `Active calibration saved ${new Date(c.savedAt).toLocaleString()} (${c.freshRatios.length} fresh, ${c.damagedRatios.length} damaged, channel: ${c.channel})` +
+      (state.calInMemoryOnly ? " — in memory only." : ".")
+    : "No calibration saved yet.";
+}
+
+function saveDraft() { store.set(CONFIG.storageKeys.draft, state.draft); }
+
+async function onCalScan(type) {
+  const res = await runScan();
+  if (!res) return;
+  const entry = { id: uid(), ratio: res.ratio, tube: res.tube, white: res.white,
+    time: res.time.toISOString(), warnings: res.warnings };
+  state.draft[type].push(entry);
+  saveDraft();
+  showWarnings($("calScanWarn"), res.warnings);
+  addLog({ type: type === "fresh" ? "fresh" : "damaged", res, level: "", id: entry.id });
+  renderCalibration();
+  toast(`${type === "fresh" ? "Fresh" : "Damaged"} #${state.draft[type].length}: ratio ${fmt(res.ratio)}`);
+}
+
+function deleteCalEntry(type, id) {
+  state.draft[type] = state.draft[type].filter((e) => e.id !== id);
+  state.log = state.log.filter((l) => l.id !== id); // keep CSV consistent with the calibration
+  saveDraft(); saveLog();
+  renderCalibration(); renderLog();
+}
+
+function buildCalibration(freshRatios, damagedRatios, channel, savedAt) {
+  const freshMean = mean(freshRatios), freshSD = sd(freshRatios), damagedMean = mean(damagedRatios);
+  const cut = computeCutoffs(freshMean, freshSD, damagedMean);
+  return {
+    version: 1, channel, savedAt: savedAt || new Date().toISOString(),
+    freshMean, freshSD, damagedMean,
+    noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
+    sdMultiplier: CONFIG.calibration.sdMultiplier,
+    freshRatios, damagedRatios,
+  };
+}
+
+function setActiveCalibration(cal) {
+  state.calibration = cal;
+  const ok = store.set(CONFIG.storageKeys.calibration, cal);
+  state.calInMemoryOnly = !ok;
+  if (!ok) toast("⚠ Could not save to phone storage — calibration kept in memory only. Export JSON to keep it!", 6000);
+  renderCalibration(); updateCalNote();
+  return ok;
+}
+
+function onSaveCalibration() {
+  const s = draftStats();
+  const cal = buildCalibration(s.fr, s.dr, CONFIG.channel);
+  if (setActiveCalibration(cal)) toast("Calibration saved ✔");
+}
+
+function onExportCal() {
+  let cal = state.calibration;
+  if (!cal) { toast("No saved calibration to export."); return; }
+  const blob = new Blob([JSON.stringify(cal, null, 2)], { type: "application/json" });
+  downloadBlob(blob, "insulin-calibration-" + new Date().toISOString().slice(0, 10) + ".json");
+}
+
+function onImportFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj = JSON.parse(reader.result);
+      const fr = Array.isArray(obj.freshRatios) ? obj.freshRatios.map(Number).filter(isFinite) : [];
+      const dr = Array.isArray(obj.damagedRatios) ? obj.damagedRatios.map(Number).filter(isFinite) : [];
+      let cal;
+      if (fr.length >= 2 && dr.length >= 1) {
+        cal = buildCalibration(fr, dr, obj.channel || CONFIG.channel, obj.savedAt);
+      } else if ([obj.freshMean, obj.freshSD, obj.damagedMean].every((v) => isFinite(Number(v)))) {
+        const cut = computeCutoffs(+obj.freshMean, +obj.freshSD, +obj.damagedMean);
+        cal = { version: 1, channel: obj.channel || CONFIG.channel, savedAt: obj.savedAt || new Date().toISOString(),
+          freshMean: +obj.freshMean, freshSD: +obj.freshSD, damagedMean: +obj.damagedMean,
+          noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
+          sdMultiplier: CONFIG.calibration.sdMultiplier, freshRatios: fr, damagedRatios: dr };
+      } else {
+        throw new Error("file has no calibration data");
+      }
+      // Show the imported ratios in the calibration lists too.
+      const now = new Date().toISOString();
+      state.draft = {
+        fresh: fr.map((r) => ({ id: uid(), ratio: r, time: cal.savedAt || now, warnings: [] })),
+        damaged: dr.map((r) => ({ id: uid(), ratio: r, time: cal.savedAt || now, warnings: [] })),
+      };
+      saveDraft();
+      if (setActiveCalibration(cal)) toast("Calibration imported ✔");
+    } catch (e) {
+      toast("Import failed: " + e.message, 4000);
+    }
+  };
+  reader.onerror = () => toast("Could not read file.");
+  reader.readAsText(file);
+}
+
+function onClearCalLists() {
+  if (!confirm("Clear the fresh/damaged scan lists? The active saved calibration stays until you save a new one.")) return;
+  state.draft = { fresh: [], damaged: [] };
+  saveDraft();
+  $("calScanWarn").hidden = true;
+  renderCalibration();
+}
+
+/* =====================================================================
+   PART 6 — Data log
+   ===================================================================== */
+function saveLog() { store.set(CONFIG.storageKeys.log, state.log); }
+
+function addLog({ type, res, level, id }) {
+  state.log.push({
+    id: id || uid(),
+    time: res.time.toISOString(),
+    type,
+    name: $("sampleName").value.trim(),
+    ratio: res.ratio, tube: res.tube, white: res.white,
+    level, channel: CONFIG.channel,
+    warnings: res.warnings.join(" | "),
+  });
+  saveLog();
+  renderLog();
+}
+
+function renderLog() {
+  const body = $("logBody");
+  body.innerHTML = "";
+  const rows = state.log.slice().reverse();
+  for (const l of rows) {
+    const tr = document.createElement("tr");
+    const t = new Date(l.time);
+    tr.innerHTML =
+      `<td>${t.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
+      `<td>${escapeHtml(l.type)}</td><td>${escapeHtml(l.name)}</td>` +
+      `<td class="num">${fmt(l.ratio)}${l.warnings ? " ⚠" : ""}</td><td>${escapeHtml(l.level || "")}</td>`;
+    body.appendChild(tr);
+  }
+  $("logEmpty").hidden = rows.length > 0;
+}
+
+function csvCell(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function onDownloadCsv() {
+  if (!state.log.length) { toast("Log is empty."); return; }
+  const header = ["time", "type", "sample_name", "ratio", "level", "tube_value", "white_value", "channel", "warnings"];
+  const lines = [header.join(",")];
+  for (const l of state.log) {
+    lines.push([l.time, l.type, l.name, isFinite(l.ratio) ? l.ratio.toFixed(5) : "",
+      l.level, isFinite(l.tube) ? l.tube.toFixed(3) : "", isFinite(l.white) ? l.white.toFixed(3) : "",
+      l.channel, l.warnings].map(csvCell).join(","));
+  }
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv" });
+  downloadBlob(blob, "insulin-scans-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".csv");
+}
+
+function onClearLog() {
+  if (!confirm("Delete the whole scan log? Download the CSV first if you need it.")) return;
+  state.log = [];
+  saveLog(); renderLog();
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* =====================================================================
+   Tabs + init
+   ===================================================================== */
+function switchTab(name) {
+  document.querySelectorAll("nav.tabs button").forEach((b) =>
+    b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  for (const p of ["scan", "cal", "log"]) $("panel-" + p).hidden = p !== name;
+}
+
+function init() {
+  $("minFreshTxt").textContent = CONFIG.calibration.minFresh;
+  $("minDmgTxt").textContent = CONFIG.calibration.minDamaged;
+
+  drawOverlays();
+
+  state.calibration = store.get(CONFIG.storageKeys.calibration);
+  const draft = store.get(CONFIG.storageKeys.draft);
+  if (draft && Array.isArray(draft.fresh) && Array.isArray(draft.damaged)) state.draft = draft;
+  const log = store.get(CONFIG.storageKeys.log);
+  if (Array.isArray(log)) state.log = log;
+
+  document.querySelectorAll("nav.tabs button").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
+  $("btnScan").onclick = onScanClick;
+  $("btnCalFresh").onclick = () => onCalScan("fresh");
+  $("btnCalDmg").onclick = () => onCalScan("damaged");
+  $("btnSaveCal").onclick = onSaveCalibration;
+  $("btnExportCal").onclick = onExportCal;
+  $("btnImportCal").onclick = () => $("importFile").click();
+  $("importFile").onchange = onImportFile;
+  $("btnClearCalLists").onclick = onClearCalLists;
+  $("btnCsv").onclick = onDownloadCsv;
+  $("btnClearLog").onclick = onClearLog;
+  $("btnRelock").onclick = async () => { setCamStatus("Re-measuring light…"); await lockCamera(); };
+  $("btnStartCam").onclick = async () => {
+    if (state.stream && video.paused) {
+      try { await video.play(); onCameraReady(); } catch (e) { startCamera(); }
+    } else startCamera();
+  };
+
+  renderCalibration();
+  renderLog();
+  updateCalNote();
+  startCamera();
+}
+
+init();
+</script>
+</body>
+</html>
