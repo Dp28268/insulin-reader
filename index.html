@@ -14,17 +14,78 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>Insulin Damage Reader</title>
+<!-- Offline / add-to-home-screen support (see manifest.webmanifest and sw.js) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Insulin Check">
+<title>Insulin Check</title>
 <style>
   :root {
     --bg: #000; --panel: #141414; --panel2: #1f1f1f; --text: #fff; --muted: #b8b8b8;
     --accent: #ffd400; --ok: #2ecc40; --mild: #ffdc00; --mod: #ff851b; --sev: #ff4136;
-    --border: #3a3a3a; --tab-h: 68px;
+    --border: #3a3a3a; --tab-h: 68px; --pub-bar-h: 104px;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 18px; }
-  body { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 12px); }
+  body.team { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 12px); }
+  body.public { padding-bottom: calc(var(--pub-bar-h) + env(safe-area-inset-bottom) + 12px); }
+  [hidden] { display: none !important; }
+
+  /* ---------- Modes: team-only content never shows in public mode ---------- */
+  body:not(.team) .team-only { display: none !important; }
+  body.team .public-only { display: none !important; }
+
+  /* ---------- Header (long-press the title for 3 s to open team mode) ---------- */
+  .app-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #0a0a0a;
+    border-bottom: 2px solid var(--border); }
+  .app-header h1 { margin: 0; font-size: 24px; font-weight: 900; flex: 1;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .team-badge { background: var(--accent); color: #000; font-weight: 900; padding: 4px 10px; border-radius: 8px; font-size: 15px; }
+  .app-header button { min-height: 44px; font-size: 15px; padding: 6px 12px; }
+  .demo-banner { background: #5c0000; color: #fff; border-bottom: 3px solid var(--sev); text-align: center;
+    font-weight: 800; padding: 10px 14px; font-size: 18px; }
+
+  /* ---------- Public mode ---------- */
+  .steps { list-style: none; margin: 0; padding: 10px 14px 4px; max-width: 640px; margin: 0 auto; }
+  .steps li { display: flex; align-items: center; margin-bottom: 8px; background: var(--panel);
+    border: 2px solid var(--border); border-radius: 14px; padding: 6px 12px 6px 8px; font-size: 20px; font-weight: 700; }
+  .steps .num { flex: 0 0 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%;
+    background: var(--accent); color: #000; font-weight: 900; margin-right: 8px; }
+  .steps svg { flex: 0 0 52px; width: 52px; height: 52px; margin-right: 12px; }
+  .pub-bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    background: #0a0a0a; border-top: 2px solid var(--border); z-index: 10; }
+  .pub-bar .big-btn { display: block; max-width: 640px; margin: 0 auto; }
+  body.showing-result .pub-hide-on-result { display: none !important; }
+  .pub-result { max-width: 640px; margin: 0 auto; padding: 24px 16px; text-align: center; }
+  .pub-emoji { font-size: 120px; line-height: 1.1; }
+  .pub-word { font-size: 56px; font-weight: 900; margin: 6px 0 14px; }
+  .pub-msg { font-size: 24px; line-height: 1.35; font-weight: 600; margin: 0 0 28px; }
+  .pub-note { color: var(--muted); font-size: 16px; margin-top: 22px; }
+
+  /* ---------- Printable card view ---------- */
+  #printView { background: #fff; color: #000; min-height: 100vh; padding: 14px; }
+  #printView .toolbar { max-width: 700px; margin: 0 auto 16px; }
+  #printView .toolbar p { font-size: 16px; }
+  #printView .toolbar button { background: #eee; color: #000; border-color: #999; margin-right: 8px; }
+  #printView .toolbar .btn-primary { background: var(--accent); }
+  .sheet { font-family: Arial, Helvetica, sans-serif; color: #000; }
+  .sheet h2 { font-size: 18px; margin: 0 0 4mm; }
+  .sheet p { font-size: 11pt; margin: 2mm 0; }
+  .sheet svg { display: block; }
+  body.print-open > *:not(#printView) { display: none !important; }
+  @media print {
+    @page { size: letter portrait; margin: 10mm; }
+    html, body { background: #fff !important; }
+    body { padding: 0 !important; }
+    body > *:not(#printView) { display: none !important; }
+    #printView { padding: 0; min-height: 0; }
+    #printView .toolbar { display: none !important; }
+  }
   button { font: inherit; color: inherit; cursor: pointer; border: 2px solid var(--border);
     background: var(--panel2); border-radius: 12px; min-height: 52px; padding: 10px 16px; }
   button:disabled { opacity: .4; cursor: not-allowed; }
@@ -34,14 +95,14 @@
   label { display: block; color: var(--muted); margin: 0 0 6px; font-size: 16px; }
 
   /* ---------- Camera ---------- */
-  .cam-wrap { position: relative; width: 100%; margin: 0 auto; background: #111; aspect-ratio: 4 / 3; overflow: hidden; }
+  .cam-wrap { position: relative; width: 100%; margin: 0 auto; background: #111; aspect-ratio: 4 / 3; min-height: 200px; overflow: hidden; }
   .cam-wrap video { display: block; width: 100%; height: 100%; }
   .roi { position: absolute; border: 3px solid; pointer-events: none; }
   .roi span { position: absolute; top: -26px; left: -3px; font-size: 14px; font-weight: 800;
     padding: 2px 6px; color: #000; white-space: nowrap; }
   .roi.tube { border-color: #00e5ff; } .roi.tube span { background: #00e5ff; }
   .roi.white { border-color: #ff00e5; aspect-ratio: 1 / 1; } .roi.white span { background: #ff00e5; }
-  .cam-msg { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+  .cam-msg { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 12px;
     align-items: center; justify-content: center; text-align: center; padding: 20px; background: rgba(0,0,0,.85); }
   .cam-msg[hidden] { display: none; }
   .status { padding: 8px 14px; font-size: 15px; color: var(--muted); display: flex; gap: 10px; align-items: center; justify-content: space-between; }
@@ -98,10 +159,53 @@
   canvas#work { display: none; }
 </style>
 </head>
-<body>
+<body class="public">
+
+<!-- ================= HEADER (long-press title 3 s → team mode) ================= -->
+<header class="app-header">
+  <h1 id="appTitle">Insulin Check</h1>
+  <span class="team-badge team-only">TEAM</span>
+  <button id="btnExitTeam" class="team-only">Public view</button>
+</header>
+<div class="demo-banner public-only" id="demoBanner" hidden>⚠ Demo calibration — not for real use</div>
+
+<!-- ================= PUBLIC MODE: 3 steps ================= -->
+<ol class="steps public-only pub-hide-on-result" id="pubSteps">
+  <li><span class="num">1</span>
+    <svg viewBox="0 0 52 52" aria-hidden="true">
+      <path d="M20 6h12v30a6 6 0 0 1-12 0z" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M21 22h10v14a5 5 0 0 1-10 0z" fill="#ffd400"/>
+      <path d="M8 14q-4 6 0 12M44 14q4 6 0 12M4 10q-6 10 0 20M48 10q6 10 0 20" fill="none" stroke="#b8b8b8" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+    <span>Add insulin to the tube and shake</span></li>
+  <li><span class="num">2</span>
+    <svg viewBox="0 0 52 52" aria-hidden="true">
+      <rect x="3" y="8" width="46" height="36" rx="3" fill="#000" stroke="#fff" stroke-width="2.5"/>
+      <rect x="10" y="14" width="10" height="24" fill="none" stroke="#00e5ff" stroke-width="2.5" stroke-dasharray="4 3"/>
+      <rect x="31" y="21" width="10" height="10" fill="#fff"/>
+      <path d="M15 4v10" stroke="#ffd400" stroke-width="3" stroke-linecap="round"/><path d="M11 10l4 4 4-4" fill="none" stroke="#ffd400" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <span>Place tube on the card</span></li>
+  <li><span class="num">3</span>
+    <svg viewBox="0 0 52 52" aria-hidden="true">
+      <rect x="6" y="14" width="40" height="22" rx="11" fill="#ffd400"/>
+      <path d="M26 30v14" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="26" cy="30" r="5" fill="#fff"/>
+    </svg>
+    <span>Tap Scan</span></li>
+</ol>
+
+<!-- ================= PUBLIC MODE: result screen ================= -->
+<section class="pub-result public-only" id="pubResult" hidden aria-live="polite">
+  <div class="pub-emoji" id="pubEmoji">🟢</div>
+  <div class="pub-word" id="pubWord">None</div>
+  <p class="pub-msg" id="pubMsg"></p>
+  <button class="big-btn" id="btnScanAgain">Scan again</button>
+  <p class="pub-note" id="pubNote"></p>
+</section>
 
 <!-- ================= CAMERA VIEW ================= -->
-<div class="cam-wrap" id="camWrap">
+<div class="cam-wrap pub-hide-on-result" id="camWrap">
   <video id="video" autoplay playsinline muted></video>
   <div id="overlays"></div>
   <div class="cam-msg" id="camMsg">
@@ -109,12 +213,17 @@
     <button id="btnStartCam" class="btn-primary" hidden>Start camera</button>
   </div>
 </div>
-<div class="status" id="camStatus"><span id="camStatusText">Camera not started</span>
+<!-- PUBLIC MODE: one big Scan button, fixed at the bottom for one-handed use -->
+<div class="pub-bar public-only pub-hide-on-result">
+  <button class="big-btn" id="btnPubScan" disabled>Scan</button>
+</div>
+
+<div class="status team-only" id="camStatus"><span id="camStatusText">Camera not started</span>
   <button id="btnRelock" hidden title="Re-measure and lock exposure / white balance / focus">Re-lock</button>
 </div>
 <canvas id="work"></canvas>
 
-<main>
+<main class="team-only">
   <!-- ================= SCAN TAB ================= -->
   <section class="panel" id="panel-scan">
     <div class="card">
@@ -139,6 +248,12 @@
 
   <!-- ================= CALIBRATION TAB ================= -->
   <section class="panel" id="panel-cal" hidden>
+    <div class="card">
+      <h2>Card &amp; setup</h2>
+      <p class="muted" style="margin-top:0" id="cardInfo"></p>
+      <div class="row"><button id="btnPrintCard">🖨 Print card</button></div>
+    </div>
+
     <div class="card">
       <h2>Calibration</h2>
       <p class="muted" style="margin-top:0">Scan known samples. Need at least <span id="minFreshTxt"></span> fresh
@@ -165,6 +280,7 @@
         <span>Fresh mean</span><b id="stFreshMean">—</b>
         <span>Fresh SD</span><b id="stFreshSD">—</b>
         <span>Damaged mean</span><b id="stDmgMean">—</b>
+        <span>Damaged SD</span><b id="stDmgSD">—</b>
         <span>🟢 None if ratio &lt;</span><b id="stNone">—</b>
         <span>🟡 Mild if &lt;</span><b id="stMild">—</b>
         <span>🟠 Moderate if &lt;</span><b id="stMod">—</b>
@@ -175,6 +291,16 @@
         <button class="btn-primary" id="btnSaveCal" disabled>Save calibration</button>
       </div>
       <p class="muted" id="calSavedInfo"></p>
+    </div>
+
+    <div class="card">
+      <h3>Public calibration (built into the app)</h3>
+      <p class="muted" style="margin-top:0" id="builtInInfo"></p>
+      <p class="muted">To update it: save a calibration above, tap the button, then replace the
+        <code>BUILT_IN_CALIBRATION</code> block in CONFIG (index.html) with the copied text and publish.</p>
+      <div class="row"><button class="btn-primary" id="btnCopyCode">Copy calibration as code</button></div>
+      <textarea id="codeOut" readonly hidden rows="11"
+        style="width:100%;margin-top:10px;font:15px/1.35 ui-monospace,Menlo,Consolas,monospace;background:#000;color:#9f9;border:2px solid var(--border);border-radius:10px;padding:10px"></textarea>
     </div>
 
     <div class="card">
@@ -209,13 +335,24 @@
   </section>
 </main>
 
-<nav class="tabs" role="tablist">
+<nav class="tabs team-only" role="tablist">
   <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
   <button role="tab" data-tab="cal" aria-selected="false">Calibrate</button>
   <button role="tab" data-tab="log" aria-selected="false">Log</button>
 </nav>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- ================= PRINTABLE CARD (team mode → Print card) ================= -->
+<div id="printView" hidden>
+  <div class="toolbar">
+    <button class="btn-primary" id="btnDoPrint">Print</button>
+    <button id="btnClosePrint">Close</button>
+    <p><b>Print on US Letter at 100% / "Actual size".</b> Turn OFF "Fit to page" / "Scale to fit".
+      After printing, measure the 5 cm bar with a ruler — if it is not exactly 5 cm, the card is the wrong size.</p>
+  </div>
+  <div class="sheet" id="printSheet"></div>
+</div>
 
 <script>
 "use strict";
@@ -263,6 +400,52 @@ const CONFIG = {
     lockFocus: true,
     exposureTime: null,      // null = keep the auto-measured value; or a number in the camera's units (Chrome: 100 µs)
     iso: null,               // null = keep current; or a number like 100
+  },
+
+  // ------------------------------------------------------------------
+  // BUILT-IN CALIBRATION — PUBLIC MODE ALWAYS USES THIS.
+  // !!! PLACEHOLDER VALUES — NOT MEASURED — NOT FOR REAL USE !!!
+  // Replace this whole block with the output of
+  //   Team mode → Calibrate → "Copy calibration as code".
+  // While isPlaceholder is true, public mode shows "Demo calibration — not for real use".
+  // ------------------------------------------------------------------
+  BUILT_IN_CALIBRATION: {
+    isPlaceholder: true,       // PLACEHOLDER — set by "Copy calibration as code" to false
+    channel: "green",
+    freshMean: 0.25000,        // PLACEHOLDER
+    freshSD: 0.02000,          // PLACEHOLDER
+    damagedMean: 0.60000,      // PLACEHOLDER
+    damagedSD: 0.05000,        // PLACEHOLDER
+    nFresh: 0,
+    nDamaged: 0,
+    measuredOn: "PLACEHOLDER",
+  },
+
+  // Plain-language result text for PUBLIC mode.
+  publicText: {
+    none:     "Looks good: no heat damage was found. This insulin should be OK to use.",
+    mild:     "Mild: there may be a little heat damage. It may work a bit less well — check your blood sugar more often and get a new vial soon.",
+    moderate: "Moderate: this insulin is damaged and may not control blood sugar well. Replace it as soon as you can.",
+    severe:   "Severe: this insulin may not work properly. Do not use it if you have another vial.",
+    retry:    "The picture was too dark or too bright. Check that the light is on, the tube is on the card and the box is closed. Then scan again.",
+    note:     "This is a screening tool, not a medical test. If you are unsure, ask a health worker or pharmacist.",
+  },
+
+  // Team mode: open with ?team in the URL, or press and hold the title for this long (ms).
+  teamLongPressMs: 3000,
+
+  // Printable card (Team mode → Print card). Sizes in millimetres.
+  // viewWidthMm × viewHeightMm = the area of the box floor the camera actually sees
+  // (measure it: put a ruler on the floor of the box and read it in the live preview).
+  // Its shape should match the camera picture (Team → Calibrate shows the camera's shape).
+  card: {
+    viewWidthMm: 72,
+    viewHeightMm: 128,
+    marginMm: 14,            // black border around the camera view
+    stripeMm: 3,             // width of the white alignment stripes (just outside the camera view)
+    stripeGapMm: 1.5,        // gap between camera view edge and stripe
+    tubeOutlineGapMm: 1.5,   // tube outline is drawn this far OUTSIDE the TUBE box so it is not measured
+    scaleBarMm: 50,          // scale bar length (5 cm)
   },
 
   decimals: 3,               // ratio decimals shown
@@ -319,7 +502,9 @@ const state = {
   stream: null,
   track: null,
   scanning: false,
-  calibration: null,           // saved/active calibration object
+  team: false,                 // false = public mode (default), true = team mode
+  builtInCal: null,            // from CONFIG.BUILT_IN_CALIBRATION — used by public mode
+  calibration: null,           // team's saved calibration object (team mode only)
   calInMemoryOnly: false,
   draft: { fresh: [], damaged: [] }, // each entry: {id, ratio, tube, white, time, warnings}
   log: [],                     // {id, time, type, name, ratio, level, tube, white, channel, warnings}
@@ -353,9 +538,15 @@ function sizeCameraBox() {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
   const wrap = $("camWrap");
+  if (!wrap.offsetParent) return; // hidden (e.g. public result screen) — redo when shown
   wrap.style.aspectRatio = vw + " / " + vh;
-  // Keep a tall portrait stream from pushing the controls off-screen.
-  wrap.style.maxWidth = "calc(60vh * " + (vw / vh).toFixed(4) + ")";
+  // Keep a tall portrait stream from pushing the controls off-screen (smaller in public mode).
+  const maxH = window.innerHeight * (state.team ? 0.6 : 0.45);
+  wrap.style.maxWidth = Math.round(maxH * vw / vh) + "px";
+  // Explicit pixel height too, for older browsers without CSS aspect-ratio.
+  wrap.style.height = Math.round(wrap.clientWidth * vh / vw) + "px";
+  const sq = document.querySelector(".roi.white");
+  if (sq && CONFIG.boxes.white.square) sq.style.height = sq.offsetWidth + "px";
 }
 
 function showCamMessage(text, showButton) {
@@ -419,6 +610,7 @@ async function onCameraReady() {
   $("camMsg").hidden = true;
   sizeCameraBox();
   video.addEventListener("resize", sizeCameraBox);
+  updateCardInfo();
   setScanButtonsEnabled(true);
   setCamStatus("Camera on — measuring light, then locking settings…");
   await sleep(CONFIG.camera.warmupMs);
@@ -462,9 +654,9 @@ async function lockCamera() {
 
   if (CONFIG.camera.lockExposure && caps.exposureMode && caps.exposureMode.includes("manual")) {
     const c = { exposureMode: "manual" };
-    const t = CONFIG.camera.exposureTime ?? settings.exposureTime;
+    const t = CONFIG.camera.exposureTime != null ? CONFIG.camera.exposureTime : settings.exposureTime;
     if (t != null && caps.exposureTime) c.exposureTime = clamp(t, caps.exposureTime.min, caps.exposureTime.max);
-    const iso = CONFIG.camera.iso ?? settings.iso;
+    const iso = CONFIG.camera.iso != null ? CONFIG.camera.iso : settings.iso;
     if (iso != null && caps.iso) c.iso = clamp(iso, caps.iso.min, caps.iso.max);
     await tryApply("exposure", c, (s) => s.exposureMode === "manual");
   }
@@ -571,16 +763,18 @@ async function captureAndAnalyze() {
 function setScanButtonsEnabled(on) {
   const ready = on && !!state.track;
   $("btnScan").disabled = !ready;
+  $("btnPubScan").disabled = !ready;
   $("btnCalFresh").disabled = !ready;
   $("btnCalDmg").disabled = !ready;
 }
 
-async function runScan() {
+async function runScan(btn) {
   if (state.scanning) return null;
   state.scanning = true;
   setScanButtonsEnabled(false);
-  const oldText = $("btnScan").textContent;
-  $("btnScan").textContent = "Scanning…";
+  btn = btn || $("btnScan");
+  const oldText = btn.textContent;
+  btn.textContent = "Scanning…";
   try {
     const res = await captureAndAnalyze();
     if (navigator.vibrate) navigator.vibrate(60);
@@ -589,7 +783,7 @@ async function runScan() {
     toast("Scan failed: " + e.message);
     return null;
   } finally {
-    $("btnScan").textContent = oldText;
+    btn.textContent = oldText;
     state.scanning = false;
     setScanButtonsEnabled(true);
   }
@@ -648,23 +842,41 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Built-in calibration (from CONFIG) — always used by public mode.
+function getBuiltInCalibration() {
+  const B = CONFIG.BUILT_IN_CALIBRATION;
+  if (!B || ![B.freshMean, B.freshSD, B.damagedMean].every((v) => isFinite(Number(v)))) return null;
+  const cut = computeCutoffs(+B.freshMean, +B.freshSD, +B.damagedMean);
+  return {
+    source: "built-in", isPlaceholder: !!B.isPlaceholder, channel: B.channel || CONFIG.channel,
+    freshMean: +B.freshMean, freshSD: +B.freshSD, damagedMean: +B.damagedMean, damagedSD: +B.damagedSD,
+    noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
+    freshRatios: [], damagedRatios: [], savedAt: B.measuredOn,
+  };
+}
+
+// Team mode uses the team's saved calibration if there is one, otherwise the built-in one.
+function teamCalibration() { return state.calibration || state.builtInCal; }
+
 function updateCalNote() {
-  const c = state.calibration;
+  const c = teamCalibration();
   let txt;
   if (!c) txt = "Not calibrated — go to the Calibrate tab to set levels.";
   else {
-    txt = `Calibration: None < ${fmt(c.noneCutoff)} · Mild < ${fmt(c.mildMax)} · Moderate < ${fmt(c.moderateMax)} · Severe ≥ ${fmt(c.moderateMax)}`;
+    txt = (state.calibration ? "Using saved team calibration: " :
+      "Using BUILT-IN calibration" + (c.isPlaceholder ? " (PLACEHOLDER demo values)" : "") + ": ") +
+      `None < ${fmt(c.noneCutoff)} · Mild < ${fmt(c.mildMax)} · Moderate < ${fmt(c.moderateMax)} · Severe ≥ ${fmt(c.moderateMax)}`;
     if (c.channel && c.channel !== CONFIG.channel)
       txt += ` ⚠ Calibrated with "${c.channel}" channel but CONFIG uses "${CONFIG.channel}" — recalibrate.`;
-    if (state.calInMemoryOnly) txt += " (in memory only — export it to keep it)";
+    if (state.calibration && state.calInMemoryOnly) txt += " (in memory only — export it to keep it)";
   }
   $("calNote").textContent = txt;
 }
 
 async function onScanClick() {
-  const res = await runScan();
+  const res = await runScan($("btnScan"));
   if (!res) return;
-  const level = classify(res.ratio, state.calibration);
+  const level = classify(res.ratio, teamCalibration());
   showResult(res, level);
   addLog({ type: "test", res, level: level ? level.name : "Not calibrated" });
 }
@@ -706,6 +918,7 @@ function renderCalibration() {
   $("stFreshMean").textContent = fmt(s.freshMean);
   $("stFreshSD").textContent = fmt(s.freshSD, 4);
   $("stDmgMean").textContent = fmt(s.damagedMean);
+  $("stDmgSD").textContent = fmt(sd(s.dr), 4);
   $("stNone").textContent = s.cut ? fmt(s.cut.noneCutoff) : "—";
   $("stMild").textContent = s.cut ? fmt(s.cut.mildMax) : "—";
   $("stMod").textContent = s.cut ? fmt(s.cut.moderateMax) : "—";
@@ -724,9 +937,9 @@ function renderCalibration() {
 function saveDraft() { store.set(CONFIG.storageKeys.draft, state.draft); }
 
 async function onCalScan(type) {
-  const res = await runScan();
+  const res = await runScan($(type === "fresh" ? "btnCalFresh" : "btnCalDmg"));
   if (!res) return;
-  const entry = { id: uid(), ratio: res.ratio, tube: res.tube, white: res.white,
+  const entry ={ id: uid(), ratio: res.ratio, tube: res.tube, white: res.white,
     time: res.time.toISOString(), warnings: res.warnings };
   state.draft[type].push(entry);
   saveDraft();
@@ -748,7 +961,7 @@ function buildCalibration(freshRatios, damagedRatios, channel, savedAt) {
   const cut = computeCutoffs(freshMean, freshSD, damagedMean);
   return {
     version: 1, channel, savedAt: savedAt || new Date().toISOString(),
-    freshMean, freshSD, damagedMean,
+    freshMean, freshSD, damagedMean, damagedSD: sd(damagedRatios),
     noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
     sdMultiplier: CONFIG.calibration.sdMultiplier,
     freshRatios, damagedRatios,
@@ -793,7 +1006,7 @@ function onImportFile(ev) {
       } else if ([obj.freshMean, obj.freshSD, obj.damagedMean].every((v) => isFinite(Number(v)))) {
         const cut = computeCutoffs(+obj.freshMean, +obj.freshSD, +obj.damagedMean);
         cal = { version: 1, channel: obj.channel || CONFIG.channel, savedAt: obj.savedAt || new Date().toISOString(),
-          freshMean: +obj.freshMean, freshSD: +obj.freshSD, damagedMean: +obj.damagedMean,
+          freshMean: +obj.freshMean, freshSD: +obj.freshSD, damagedMean: +obj.damagedMean, damagedSD: +obj.damagedSD,
           noneCutoff: cut.noneCutoff, mildMax: cut.mildMax, moderateMax: cut.moderateMax,
           sdMultiplier: CONFIG.calibration.sdMultiplier, freshRatios: fr, damagedRatios: dr };
       } else {
@@ -891,6 +1104,208 @@ function downloadBlob(blob, filename) {
 }
 
 /* =====================================================================
+   MODES — public (default) and team (?team or long-press title)
+   ===================================================================== */
+function isTeamUrl() { return /[?&]team(=|&|$)/.test(location.search); }
+
+function setMode(team) {
+  state.team = team;
+  document.body.classList.toggle("team", team);
+  document.body.classList.toggle("public", !team);
+  hidePublicResult();
+  if (team) { switchTab("scan"); renderCalibration(); updateCalNote(); updateCardInfo(); }
+  setTimeout(sizeCameraBox, 0);
+  window.scrollTo(0, 0);
+}
+
+function enterTeamMode() {
+  if (state.team) return;
+  try { history.replaceState(null, "", location.pathname + "?team"); } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60]);
+  setMode(true);
+  toast("Team mode");
+}
+
+function exitTeamMode() {
+  try { history.replaceState(null, "", location.pathname); } catch (e) {}
+  setMode(false);
+}
+
+// Press-and-hold detector using touch + mouse events (works on old Android/iOS browsers).
+function setupLongPress(el, ms, onLong) {
+  let timer = null;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const start = () => { cancel(); timer = setTimeout(() => { timer = null; onLong(); }, ms); };
+  el.addEventListener("touchstart", start, { passive: true });
+  ["touchend", "touchcancel", "touchmove"].forEach((ev) => el.addEventListener(ev, cancel));
+  el.addEventListener("mousedown", start);
+  ["mouseup", "mouseleave"].forEach((ev) => el.addEventListener(ev, cancel));
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+/* =====================================================================
+   PUBLIC MODE — scan and plain-language result (no numbers)
+   ===================================================================== */
+async function onPublicScan() {
+  const res = await runScan($("btnPubScan"));
+  if (!res) return;
+  const T = CONFIG.publicText;
+  let emoji, word, msg, color;
+  const level = res.warnings.length ? null : classify(res.ratio, state.builtInCal);
+  if (!level) {
+    emoji = "⚠️"; word = "Try again"; msg = T.retry; color = "var(--accent)";
+  } else {
+    emoji = level.emoji; word = level.name; msg = T[level.key];
+    color = { none: "var(--ok)", mild: "var(--mild)", moderate: "var(--mod)", severe: "var(--sev)" }[level.key];
+  }
+  $("pubEmoji").textContent = emoji;
+  $("pubWord").textContent = word;
+  $("pubWord").style.color = color;
+  $("pubMsg").textContent = msg;
+  $("pubNote").textContent = (state.builtInCal && state.builtInCal.isPlaceholder ? "⚠ Demo calibration — not for real use. " : "") + T.note;
+  $("pubResult").hidden = false;
+  document.body.classList.add("showing-result");
+  window.scrollTo(0, 0);
+}
+
+function hidePublicResult() {
+  $("pubResult").hidden = true;
+  document.body.classList.remove("showing-result");
+  if (video.srcObject && video.paused) video.play().catch(function () {});
+  setTimeout(sizeCameraBox, 0);
+}
+
+/* =====================================================================
+   Copy calibration as code (paste into CONFIG.BUILT_IN_CALIBRATION)
+   ===================================================================== */
+function calibrationAsCode(c) {
+  const n = (v) => (isFinite(v) ? Number(v).toFixed(5) : "null");
+  const nF = c.freshRatios && c.freshRatios.length ? c.freshRatios.length : 0;
+  const nD = c.damagedRatios && c.damagedRatios.length ? c.damagedRatios.length : 0;
+  return [
+    "BUILT_IN_CALIBRATION: {",
+    "    isPlaceholder: false,",
+    '    channel: "' + (c.channel || CONFIG.channel) + '",',
+    "    freshMean: " + n(c.freshMean) + ",",
+    "    freshSD: " + n(c.freshSD) + ",",
+    "    damagedMean: " + n(c.damagedMean) + ",",
+    "    damagedSD: " + n(c.damagedSD) + ",",
+    "    nFresh: " + nF + ",",
+    "    nDamaged: " + nD + ",",
+    '    measuredOn: "' + new Date(c.savedAt || Date.now()).toISOString().slice(0, 10) + '",',
+    "  },",
+  ].join("\n");
+}
+
+async function onCopyCode() {
+  let c = state.calibration;
+  if (!c) {
+    const s = draftStats(), C = CONFIG.calibration;
+    if (s.fr.length >= C.minFresh && s.dr.length >= C.minDamaged && s.cut) c = buildCalibration(s.fr, s.dr, CONFIG.channel);
+  }
+  if (!c) { toast("Save a calibration first (≥" + CONFIG.calibration.minFresh + " fresh, ≥" + CONFIG.calibration.minDamaged + " damaged).", 4000); return; }
+  const code = calibrationAsCode(c);
+  const ta = $("codeOut");
+  ta.value = code; ta.hidden = false;
+  let ok = false;
+  try { await navigator.clipboard.writeText(code); ok = true; } catch (e) {}
+  if (!ok) { try { ta.focus(); ta.select(); ok = document.execCommand("copy"); } catch (e) {} }
+  toast(ok ? "Copied ✔ Paste it over BUILT_IN_CALIBRATION in index.html" : "Select the text below and copy it", 4000);
+}
+
+function renderBuiltInInfo() {
+  const b = state.builtInCal;
+  $("builtInInfo").textContent = !b ? "Missing or invalid BUILT_IN_CALIBRATION in CONFIG." :
+    (b.isPlaceholder ? "⚠ PLACEHOLDER values (demo only). " : "Measured " + b.savedAt + ". ") +
+    `Fresh ${fmt(b.freshMean)} ± ${fmt(b.freshSD, 4)}, damaged ${fmt(b.damagedMean)} ± ${fmt(b.damagedSD, 4)}. ` +
+    `Cutoffs: None < ${fmt(b.noneCutoff)} · Mild < ${fmt(b.mildMax)} · Moderate < ${fmt(b.moderateMax)}.`;
+}
+
+/* =====================================================================
+   Printable card (US Letter, actual size, positioned from CONFIG.boxes + CONFIG.card)
+   ===================================================================== */
+function updateCardInfo() {
+  const C = CONFIG.card;
+  let txt = `Card camera view: ${C.viewWidthMm} × ${C.viewHeightMm} mm (shape ${(C.viewWidthMm / C.viewHeightMm).toFixed(3)}).`;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (vw && vh) {
+    const a = vw / vh, b = C.viewWidthMm / C.viewHeightMm;
+    txt += ` Camera picture: ${vw} × ${vh} (shape ${a.toFixed(3)}).`;
+    if (Math.abs(a - b) / b > 0.03) txt += " ⚠ Shapes don't match — change CONFIG.card.viewWidthMm/viewHeightMm before printing, or the boxes won't line up.";
+  }
+  $("cardInfo").textContent = txt;
+}
+
+function buildCardSheet() {
+  const C = CONFIG.card, vw = C.viewWidthMm, vh = C.viewHeightMm, m = C.marginMm;
+  const W = vw + 2 * m, H = vh + 2 * m;
+  const r = (v) => Math.round(v * 100) / 100;
+  const tb = CONFIG.boxes.tube, wb = CONFIG.boxes.white;
+  // Box positions in mm on the card (camera view starts at m, m).
+  const tx = m + tb.x / 100 * vw, ty = m + tb.y / 100 * vh, tw = tb.w / 100 * vw, th = (tb.square ? tb.w / 100 * vw : tb.h / 100 * vh);
+  const wx = m + wb.x / 100 * vw, wy = m + wb.y / 100 * vh, ww = wb.w / 100 * vw, wh = (wb.square ? ww : wb.h / 100 * vh);
+  const g = C.tubeOutlineGapMm, s = C.stripeMm, sg = C.stripeGapMm;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${r(W)}mm" height="${r(H)}mm" viewBox="0 0 ${r(W)} ${r(H)}">`;
+  svg += `<rect x="0" y="0" width="${r(W)}" height="${r(H)}" fill="#000"/>`;
+  // White alignment stripes just outside the camera view on all four sides.
+  svg += `<rect x="${r(m)}" y="${r(m - sg - s)}" width="${r(vw)}" height="${r(s)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m)}" y="${r(m + vh + sg)}" width="${r(vw)}" height="${r(s)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m - sg - s)}" y="${r(m)}" width="${r(s)}" height="${r(vh)}" fill="#fff"/>`;
+  svg += `<rect x="${r(m + vw + sg)}" y="${r(m)}" width="${r(s)}" height="${r(vh)}" fill="#fff"/>`;
+  // White reference square (exactly the WHITE box).
+  svg += `<rect x="${r(wx)}" y="${r(wy)}" width="${r(ww)}" height="${r(wh)}" fill="#fff"/>`;
+  // Tube outline: dashed grey, drawn just OUTSIDE the TUBE box so the line is not measured.
+  svg += `<rect x="${r(tx - g)}" y="${r(ty - g)}" width="${r(tw + 2 * g)}" height="${r(th + 2 * g)}" fill="none" stroke="#9a9a9a" stroke-width="0.6" stroke-dasharray="2 1.5"/>`;
+  svg += `<text x="${r(tx + tw / 2)}" y="${r(ty + th + g + 4.5)}" fill="#9a9a9a" font-size="3.5" font-family="Arial" text-anchor="middle">TUBE</text>`;
+  svg += `<text x="${r(W / 2)}" y="${r(m - sg - s - 2.5)}" fill="#9a9a9a" font-size="3.5" font-family="Arial" text-anchor="middle">▲ TOP of camera picture</text>`;
+  svg += `</svg>`;
+
+  const bar = C.scaleBarMm;
+  let scale = `<svg xmlns="http://www.w3.org/2000/svg" width="${bar + 10}mm" height="14mm" viewBox="0 0 ${bar + 10} 14">`;
+  scale += `<rect x="5" y="3" width="${bar}" height="3" fill="#000"/>`;
+  for (let i = 0; i <= bar / 10; i++) {
+    scale += `<rect x="${5 + i * 10 - 0.2}" y="1" width="0.4" height="7" fill="#000"/>`;
+    scale += `<text x="${5 + i * 10}" y="12.5" font-size="3.2" font-family="Arial" text-anchor="middle">${i}</text>`;
+  }
+  scale += `</svg>`;
+
+  return `<h2>Insulin Check — scan card</h2>
+    <p>Print at 100% (Actual size) on US Letter. Cut out along the black edge and glue it flat on the floor of the box.
+      Line it up so the white stripes sit just outside the edges of the camera picture, and the TUBE / WHITE boxes on screen
+      sit over the dashed tube outline and the white square.</p>
+    ${svg}
+    <p style="margin-top:6mm"><b>Scale check — this bar must measure exactly ${bar / 10} cm:</b></p>
+    ${scale}
+    <p>cm. If it doesn't, reprint with "Fit to page" turned off.</p>
+    <p style="color:#555;font-size:9pt">Settings used: camera view ${vw} × ${vh} mm; TUBE box x ${tb.x}%, y ${tb.y}%, w ${tb.w}%, h ${tb.h}%;
+      WHITE box x ${wb.x}%, y ${wb.y}%, w ${wb.w}%${wb.square ? " (square)" : ", h " + wb.h + "%"}. Reprint if CONFIG.boxes or CONFIG.card change.</p>`;
+}
+
+function openPrintCard() {
+  $("printSheet").innerHTML = buildCardSheet();
+  $("printView").hidden = false;
+  document.body.classList.add("print-open");
+  window.scrollTo(0, 0);
+}
+
+function closePrintCard() {
+  $("printView").hidden = true;
+  document.body.classList.remove("print-open");
+  setTimeout(sizeCameraBox, 0);
+}
+
+/* =====================================================================
+   OFFLINE — service worker caches the app after the first visit
+   ===================================================================== */
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function (e) { console.warn("Service worker failed", e); });
+  });
+}
+
+/* =====================================================================
    Tabs + init
    ===================================================================== */
 function switchTab(name) {
@@ -905,6 +1320,9 @@ function init() {
 
   drawOverlays();
 
+  state.builtInCal = getBuiltInCalibration();
+  // Show "Demo calibration — not for real use" until real values replace the placeholder.
+  $("demoBanner").hidden = !!(state.builtInCal && !state.builtInCal.isPlaceholder);
   state.calibration = store.get(CONFIG.storageKeys.calibration);
   const draft = store.get(CONFIG.storageKeys.draft);
   if (draft && Array.isArray(draft.fresh) && Array.isArray(draft.damaged)) state.draft = draft;
@@ -929,9 +1347,25 @@ function init() {
     } else startCamera();
   };
 
+  // Public mode + team-mode entry/exit, print card, copy-as-code.
+  $("btnPubScan").onclick = onPublicScan;
+  $("btnScanAgain").onclick = hidePublicResult;
+  $("btnExitTeam").onclick = exitTeamMode;
+  $("btnCopyCode").onclick = onCopyCode;
+  $("btnPrintCard").onclick = openPrintCard;
+  $("btnDoPrint").onclick = () => window.print();
+  $("btnClosePrint").onclick = closePrintCard;
+  setupLongPress($("appTitle"), CONFIG.teamLongPressMs, enterTeamMode);
+  window.addEventListener("resize", sizeCameraBox);
+  window.addEventListener("orientationchange", () => setTimeout(sizeCameraBox, 300));
+
+  setMode(isTeamUrl());
   renderCalibration();
+  renderBuiltInInfo();
   renderLog();
   updateCalNote();
+  updateCardInfo();
+  registerServiceWorker();
   startCamera();
 }
 
